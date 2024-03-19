@@ -1,9 +1,9 @@
 #![feature(type_alias_impl_trait)]
 #![allow(dead_code)]
 
-mod ast;
-mod parser;
-mod token;
+pub mod ast;
+pub mod parser;
+pub mod token;
 
 #[test]
 fn expr_test() {

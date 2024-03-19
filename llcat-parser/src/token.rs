@@ -16,7 +16,7 @@ pub enum Token {
     Interger(i64),
     #[regex(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?", |lex| lex.slice().parse::<f64>().unwrap())]
     Float(f64),
-    #[regex(r#""([^"\\]|\\["\\bnfrt]|u[a-fA-F0-9]{4})*""#, |lex| SmolStr::from(lex.slice().trim_matches('"')))]
+    #[regex(r#""([^"\\]|\\["\\bnfrt]|u[a-fA-F0-9]{4})*""#, |lex| SmolStr::from(&lex.slice()[1..lex.slice().len() - 1]))]
     String(SmolStr),
     #[token("false", |_| false)]
     #[token("true", |_| true)]
@@ -41,15 +41,19 @@ pub enum Token {
 
 fn to_i64(lex: &mut Lexer<Token>) -> Option<i64> {
     let s = lex.slice();
+    let neg = &s[..1] == "-";
+    let no_dec_int_str = || if neg { &s[3..] } else { &s[2..] };
     if s.len() < 3 {
-        return s.parse::<i64>().ok()
+        return s.parse::<i64>().ok();
     }
-    match &s[..2] {
-        "0b" => i64::from_str_radix(&s[2..], 2),
-        "0o" => i64::from_str_radix(&s[2..], 8),
-        "0x" => i64::from_str_radix(&s[2..], 16),
-        s => s.parse::<i64>()
-    }.ok()
+    match if neg { &s[1..3] } else { &s[..2] } {
+        "0b" => i64::from_str_radix(no_dec_int_str(), 2),
+        "0o" => i64::from_str_radix(no_dec_int_str(), 8),
+        "0x" => i64::from_str_radix(no_dec_int_str(), 16),
+        s => s.parse::<i64>(),
+    }
+    .ok()
+    .map(|i| if neg { -i } else { i })
 }
 
 pub type TokenIter<'s> = impl Iterator<Item = (Token, SimpleSpan)> + Clone;

@@ -1,5 +1,5 @@
-use chumsky::error::EmptyErr;
-use chumsky::input::Input;
+use chumsky::error::Rich;
+
 use chumsky::input::ValueInput;
 use chumsky::recursive::recursive;
 use chumsky::select;
@@ -13,19 +13,20 @@ use crate::token::token_stream;
 use crate::token::Token;
 use crate::token::TokenIter;
 
-pub type Parser<'s, I: Input<'s>> = impl chumsky::Parser<'s, I, Expr>;
-
-pub fn parse_src(src: &str) -> ParseResult<Expr, EmptyErr> {
+pub fn parse_src(src: &str) -> ParseResult<Expr, Rich<Token>> {
     let tokens = lexer(src);
-    dbg!(tokens.clone().collect::<Vec<_>>());
+    //dbg!(tokens.clone().collect::<Vec<_>>());
     parse_token(tokens, src.len())
 }
 
-pub fn parse_token<'s>(tokens: TokenIter<'s>, eoi: usize) -> ParseResult<Expr, EmptyErr> {
+pub fn parse_token<'s: 'a, 'a>(
+    tokens: TokenIter<'s>,
+    eoi: usize,
+) -> ParseResult<Expr, Rich<'a, Token>> {
     parser().parse(token_stream(tokens, eoi))
 }
 
-fn parser<'s, I>() -> Parser<'s, I>
+fn parser<'s, I>() -> impl chumsky::Parser<'s, I, Expr, chumsky::extra::Err<Rich<'s, Token>>>
 where
     I: ValueInput<'s, Token = Token, Span = SimpleSpan>,
 {
@@ -35,7 +36,7 @@ where
             Token::Float(f) => Expr::Literal(Literal::Float(f)),
             Token::Boolean(b) => Expr::Literal(Literal::Boolean(b)),
             Token::String(s) => Expr::Literal(Literal::String(s)),
-        
+
 
             Token::Ident(id) => Expr::Ident(id),
         };
