@@ -7,6 +7,6 @@ mod token;
 
 #[test]
 fn expr_test() {
-    let src = "111";
+    let src = "\"true\"";
     println!("{:?}", parser::parse_src(src));
 }

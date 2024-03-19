@@ -32,6 +32,11 @@ where
     recursive(|_expr| {
         let atom = select! {
             Token::Interger(i) => Expr::Literal(Literal::Interger(i)),
+            Token::Float(f) => Expr::Literal(Literal::Float(f)),
+            Token::Boolean(b) => Expr::Literal(Literal::Boolean(b)),
+            Token::String(s) => Expr::Literal(Literal::String(s)),
+        
+
             Token::Ident(id) => Expr::Ident(id),
         };
 
