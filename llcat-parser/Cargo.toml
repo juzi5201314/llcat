@@ -1,0 +1,13 @@
+[package]
+name = "llcat-parser"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+ahash.workspace = true
+anyhow.workspace = true
+smallvec.workspace = true
+chumsky = { git = "https://github.com/zesterer/chumsky", rev = "712af66" }
+logos = "0.14.0"
+smol_str.workspace = true
