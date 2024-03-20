@@ -15,6 +15,7 @@ macro_rules! assert_matches {
 #[test]
 fn ident_test() {
     assert_matches!("_true", Expr::Ident(id) if id == "_true");
+    assert_matches!("_01", Expr::Ident(id) if id == "_01");
     assert_matches!("a0", Expr::Ident(id) if id == "a0");
     assert_matches!("中"; err);
 }

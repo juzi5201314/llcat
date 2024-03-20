@@ -4,48 +4,152 @@ use logos::{Lexer, Logos};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 
+use crate::small_vec::SmallVec8;
+
 #[derive(Logos, Clone, PartialEq, Debug)]
 #[logos(skip r"[ \t\r\n\f]+")]
 pub enum Token {
     Error,
 
     // literal
-    #[regex(r"-?[_0-9]+", to_i64, priority = 10)]
-    #[regex(r"-?0b[_0-1]+", to_i64)]
-    #[regex(r"-?0o[_0-7]+", to_i64)]
-    #[regex(r"-?0x[_0-9a-f]+", to_i64)]
+    #[regex(r"-?[_0-9]+", lex_i64, priority = 10)]
+    #[regex(r"-?0b[_0-1]+", lex_i64)]
+    #[regex(r"-?0o[_0-7]+", lex_i64)]
+    #[regex(r"-?0x[_0-9a-f]+", lex_i64)]
     Interger(i64),
     #[regex(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?", |lex| lex.slice().parse::<f64>().unwrap())]
     Float(f64),
     #[regex(r#""([^"\\]|\\["\\0abnfrt]|\\u\{[a-fA-F0-9]{6}\})*""#, lex_string)]
     String(SmolStr),
-    #[token("false", |_| false)]
-    #[token("true", |_| true)]
+    #[token("false", |_| false, priority = 100)]
+    #[token("true", |_| true, priority = 100)]
     Boolean(bool),
 
-    #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| SmolStr::from(lex.slice()))]
+    #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| SmolStr::from(lex.slice()), priority = 20)]
     Ident(SmolStr),
 
-    #[token("{")]
-    BraceOpen,
-    #[token("}")]
-    BraceClose,
-    #[token("[")]
-    BracketOpen,
-    #[token("]")]
-    BracketClose,
+    // punctuation symbol
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Star,
+    #[token("/")]
+    Slash,
+    #[token("%")]
+    Percent,
+    #[token("^")]
+    Caret,
+    #[token("!")]
+    Not,
+    #[token("&")]
+    And,
+    #[token("|")]
+    Or,
+    #[token("&&")]
+    AndAnd,
+    #[token("||")]
+    OrOr,
+    #[token("<<")]
+    Shl,
+    #[token(">>")]
+    Shr,
+    #[token("+=")]
+    PlusEq,
+    #[token("-=")]
+    MinusEq,
+    #[token("*=")]
+    StarEq,
+    #[token("/=")]
+    SlashEq,
+    #[token("%=")]
+    PercentEq,
+    #[token("^=")]
+    CaretEq,
+    #[token("&=")]
+    AndEq,
+    #[token("|=")]
+    OrEq,
+    #[token("<<=")]
+    ShlEq,
+    #[token(">>=")]
+    ShrEq,
+    #[token("=")]
+    Eq,
+    #[token("==")]
+    EqEq,
+    #[token("!=")]
+    Ne,
+    #[token(">")]
+    Gt,
+    #[token("<")]
+    Lt,
+    #[token(">=")]
+    Ge,
+    #[token("<=")]
+    Le,
+    #[token("@")]
+    At,
+    #[token("_")]
+    Underscore,
+    #[token(".")]
+    Dot,
+    #[token(";")]
+    Semi,
     #[token(":")]
     Colon,
+    #[token("::")]
+    PathSep,
+    #[token("->")]
+    RArrow,
+    #[token("=>")]
+    FatArrow,
+    #[token("#")]
+    Pound,
+    #[token("$")]
+    Dollar,
+    #[token("?")]
+    Question,
+    #[token("~")]
+    Tilde,
+    #[token("'")]
+    SingleQuotationMark,
     #[token(",")]
     Comma,
+
+    // delimiter
+    #[regex(r"(\(\{\[)+", lex_delimiter)]
+    OpenDelimiter(Delimiter),
+    #[regex(r"(\)\}\])+", lex_delimiter)]
+    CloseDelimiter(Delimiter),
 }
 
-fn to_i64<'s>(lex: &mut Lexer<'s, Token>) -> Option<i64> {
+#[derive(Clone, PartialEq, Debug)]
+pub enum Delimiter {
+    // ()
+    Parenthesis,
+    // {}
+    Brace,
+    // []
+    Bracket
+}
+
+fn lex_delimiter(lex: &mut Lexer<Token>) -> Option<Delimiter> {
+    Some(match lex.slice() {
+        "(" | ")" => Delimiter::Parenthesis,
+        "{" | "}" => Delimiter::Brace,
+        "[" | "]" => Delimiter::Bracket,
+        _ => return None
+    })
+}
+
+fn lex_i64(lex: &mut Lexer<Token>) -> Option<i64> {
     let s = lex.slice();
     let bytes = {
         // copy from String::replace
         //let mut result = String::new_in(lex.extras);
-        let mut result = SmallVec::<[u8; 8]>::new();
+        let mut result = SmallVec8::new();
         let mut last_end = 0;
         for (start, part) in s.match_indices('_') {
             result.extend_from_slice(unsafe { s.get_unchecked(last_end..start) }.as_bytes());
@@ -70,7 +174,7 @@ fn to_i64<'s>(lex: &mut Lexer<'s, Token>) -> Option<i64> {
     .map(|i| if neg { -i } else { i })
 }
 
-fn lex_string<'s>(lex: &mut Lexer<'s, Token>) -> SmolStr {
+fn lex_string(lex: &mut Lexer<Token>) -> SmolStr {
     let chars = lex.slice()[1..lex.slice().len() - 1].chars();
     let mut s = Vec::with_capacity(lex.slice().len());
     let mut escape = false;
