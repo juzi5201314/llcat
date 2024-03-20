@@ -10,10 +10,10 @@ pub enum Token {
     Error,
 
     // literal
-    #[regex(r"-?[0-9]+", to_i64, priority = 10)]
-    #[regex(r"-?0b[0-1]+", to_i64)]
-    #[regex(r"-?0o[0-7]+", to_i64)]
-    #[regex(r"-?0x[0-9a-f]+", to_i64)]
+    #[regex(r"-?[_0-9]+", to_i64, priority = 10)]
+    #[regex(r"-?0b[_0-1]+", to_i64)]
+    #[regex(r"-?0o[_0-7]+", to_i64)]
+    #[regex(r"-?0x[_0-9a-f]+", to_i64)]
     Interger(i64),
     #[regex(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?", |lex| lex.slice().parse::<f64>().unwrap())]
     Float(f64),
@@ -41,7 +41,8 @@ pub enum Token {
 }
 
 fn to_i64(lex: &mut Lexer<Token>) -> Option<i64> {
-    let s = lex.slice();
+    let s = lex.slice().replace("_", "");
+    let s = &s;
     let neg = &s[..1] == "-";
     let no_dec_int_str = || if neg { &s[3..] } else { &s[2..] };
     if s.len() < 3 {
@@ -51,7 +52,7 @@ fn to_i64(lex: &mut Lexer<Token>) -> Option<i64> {
         "0b" => i64::from_str_radix(no_dec_int_str(), 2),
         "0o" => i64::from_str_radix(no_dec_int_str(), 8),
         "0x" => i64::from_str_radix(no_dec_int_str(), 16),
-        s => s.parse::<i64>(),
+        _ => s.parse::<i64>(),
     }
     .ok()
     .map(|i| if neg { -i } else { i })

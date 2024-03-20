@@ -31,6 +31,8 @@ fn int_test() {
     assert_matches!("0b11", Expr::Literal(Literal::Interger(3)));
     assert_matches!("0o10", Expr::Literal(Literal::Interger(8)));
     assert_matches!("-0xff", Expr::Literal(Literal::Interger(-255)));
+    assert_matches!("10_000", Expr::Literal(Literal::Interger(10_000)));
+    assert_matches!("0xf_fff", Expr::Literal(Literal::Interger(0xf_fff)));
 }
 
 #[test]
