@@ -40,9 +40,21 @@ pub enum Token {
     Comma,
 }
 
-fn to_i64(lex: &mut Lexer<Token>) -> Option<i64> {
-    let s = lex.slice().replace("_", "");
-    let s = &s;
+fn to_i64<'s>(lex: &mut Lexer<'s, Token>) -> Option<i64> {
+    let s = lex.slice();
+    let bytes = {
+        // copy from String::replace
+        //let mut result = String::new_in(lex.extras);
+        let mut result = SmallVec::<[u8; 8]>::new();
+        let mut last_end = 0;
+        for (start, part) in s.match_indices('_') {
+            result.extend_from_slice(unsafe { s.get_unchecked(last_end..start) }.as_bytes());
+            last_end = start + part.len();
+        }
+        result.extend_from_slice(unsafe { s.get_unchecked(last_end..s.len()) }.as_bytes());
+        result
+    };
+    let s = unsafe { std::str::from_utf8_unchecked(&bytes) };
     let neg = &s[..1] == "-";
     let no_dec_int_str = || if neg { &s[3..] } else { &s[2..] };
     if s.len() < 3 {
@@ -58,7 +70,7 @@ fn to_i64(lex: &mut Lexer<Token>) -> Option<i64> {
     .map(|i| if neg { -i } else { i })
 }
 
-fn lex_string(lex: &mut Lexer<Token>) -> SmolStr {
+fn lex_string<'s>(lex: &mut Lexer<'s, Token>) -> SmolStr {
     let chars = lex.slice()[1..lex.slice().len() - 1].chars();
     let mut s = Vec::with_capacity(lex.slice().len());
     let mut escape = false;
@@ -84,7 +96,8 @@ fn lex_string(lex: &mut Lexer<Token>) -> SmolStr {
             escape = false;
         } else if let Some(unicode) = &mut unicode_byte {
             if ch == '}' {
-                let unicode = u32::from_str_radix(std::str::from_utf8(unicode).unwrap(), 16).unwrap();
+                let unicode =
+                    u32::from_str_radix(std::str::from_utf8(unicode).unwrap(), 16).unwrap();
                 s.push(char::from_u32(unicode).unwrap());
                 unicode_byte = None;
             } else if ch != '{' {
@@ -112,7 +125,7 @@ pub fn lexer<'s>(source: &'s str) -> TokenIter<'s> {
     })
 }
 
-pub fn token_stream(
+pub fn token_stream<'s>(
     tokens: impl Iterator<Item = (Token, SimpleSpan)> + Clone,
     eoi: usize,
 ) -> SpannedInput<Token, SimpleSpan, Stream<impl Iterator<Item = (Token, SimpleSpan)> + Clone>> {
