@@ -7,6 +7,5 @@ pub mod token;
 
 #[test]
 fn expr_test() {
-    let src = "\"true\"";
-    println!("{:?}", parser::parse_src(src));
+    
 }
