@@ -4,6 +4,7 @@
 pub mod ast;
 pub mod parser;
 pub mod token;
+mod small_vec;
 
 #[test]
 fn expr_test() {
