@@ -49,6 +49,7 @@ fn str_test() {
     assert_matches!(r#" "\"" "#, Expr::Literal(Literal::String(s)) if s == "\"");
     assert_matches!(r#" "\n" "#, Expr::Literal(Literal::String(s)) if s == "\n");
     assert_matches!(r#" "\q" "#; err);
+    assert_matches!(r#" "\u{10FFFF}" "#, Expr::Literal(Literal::String(s)) if s == "\u{10FFFF}");
     assert_matches!("\"true\"", Expr::Literal(Literal::String(s)) if s == "true");
     assert_matches!("\"0\"", Expr::Literal(Literal::String(s)) if s == "0");
     assert_matches!("\"中\"", Expr::Literal(Literal::String(s)) if s == "中");

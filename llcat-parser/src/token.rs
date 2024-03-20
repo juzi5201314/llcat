@@ -1,6 +1,7 @@
 use chumsky::input::{Input, SpannedInput, Stream};
 use chumsky::span::SimpleSpan;
 use logos::{Lexer, Logos};
+use smallvec::SmallVec;
 use smol_str::SmolStr;
 
 #[derive(Logos, Clone, PartialEq, Debug)]
@@ -16,7 +17,7 @@ pub enum Token {
     Interger(i64),
     #[regex(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?", |lex| lex.slice().parse::<f64>().unwrap())]
     Float(f64),
-    #[regex(r#""([^"\\]|\\["\\0abnfrt]|u[a-fA-F0-9]{4})*""#, lex_string)]
+    #[regex(r#""([^"\\]|\\["\\0abnfrt]|\\u\{[a-fA-F0-9]{6}\})*""#, lex_string)]
     String(SmolStr),
     #[token("false", |_| false)]
     #[token("true", |_| true)]
@@ -58,8 +59,9 @@ fn to_i64(lex: &mut Lexer<Token>) -> Option<i64> {
 
 fn lex_string(lex: &mut Lexer<Token>) -> SmolStr {
     let chars = lex.slice()[1..lex.slice().len() - 1].chars();
-    let mut s: Vec<char> = Vec::with_capacity(lex.slice().len());
+    let mut s = Vec::with_capacity(lex.slice().len());
     let mut escape = false;
+    let mut unicode_byte = None;
 
     for ch in chars {
         if escape {
@@ -72,17 +74,30 @@ fn lex_string(lex: &mut Lexer<Token>) -> SmolStr {
                 'b' => s.push('\x08'),
                 'f' => s.push('\x0c'),
                 '\\' => s.push('\\'),
-                '"' => s.push('"'),
+                '\"' => s.push('\"'),
+                'u' => {
+                    unicode_byte = Some(SmallVec::<[u8; 6]>::new());
+                }
                 ch => panic!("unknown escape char: {}", ch),
             }
             escape = false;
+        } else if let Some(unicode) = &mut unicode_byte {
+            if ch == '}' {
+                let unicode = u32::from_str_radix(std::str::from_utf8(unicode).unwrap(), 16).unwrap();
+                s.push(char::from_u32(unicode).unwrap());
+                unicode_byte = None;
+            } else if ch != '{' {
+                let mut dst = [0; 1];
+                ch.encode_utf8(&mut dst);
+                unicode.extend_from_slice(&dst[..ch.len_utf8()]);
+            }
         } else if ch == '\\' {
             escape = true;
         } else {
             s.push(ch);
         }
     }
-   
+
     SmolStr::from_iter(s)
 }
 
