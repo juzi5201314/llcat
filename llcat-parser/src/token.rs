@@ -33,8 +33,6 @@ pub enum Token {
     // keyword
     #[token("fn")]
     KeywordFn,
-    #[token("ret")]
-    KeywordRet,
     #[token("let")]
     KeywordLet,
 
@@ -45,6 +43,10 @@ pub enum Token {
     KeywordElse,
     #[token("loop")]
     KeywordLoop,
+    #[token("br")]
+    KeywordBreak,
+    #[token("ret")]
+    KeywordRet,
 
     // punctuation symbol
     #[token("+")]
