@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use chumsky::input::{Input, SpannedInput, Stream};
 use chumsky::span::SimpleSpan;
 use logos::{Lexer, Logos};
@@ -35,7 +37,7 @@ pub enum Token {
     KeywordRet,
     #[token("let")]
     KeywordLet,
-    
+
     // control flow
     #[token("if")]
     KeywordIf,
@@ -135,9 +137,9 @@ pub enum Token {
     Comma,
 
     // delimiter
-    #[regex(r"(\(\{\[)+", lex_delimiter)]
+    #[regex(r"\(|\{|\[", lex_delimiter)]
     OpenDelimiter(Delimiter),
-    #[regex(r"(\)\}\])+", lex_delimiter)]
+    #[regex(r"\)|\}|\]", lex_delimiter)]
     CloseDelimiter(Delimiter),
 }
 
@@ -148,7 +150,7 @@ pub enum Delimiter {
     // {}
     Brace,
     // []
-    Bracket
+    Bracket,
 }
 
 fn lex_delimiter(lex: &mut Lexer<Token>) -> Option<Delimiter> {
@@ -156,7 +158,7 @@ fn lex_delimiter(lex: &mut Lexer<Token>) -> Option<Delimiter> {
         "(" | ")" => Delimiter::Parenthesis,
         "{" | "}" => Delimiter::Brace,
         "[" | "]" => Delimiter::Bracket,
-        _ => return None
+        _ => return None,
     })
 }
 
@@ -252,4 +254,86 @@ pub fn token_stream<'s>(
     let stream = Stream::from_iter(tokens.clone()).spanned(SimpleSpan::from(eoi..eoi));
 
     stream
+}
+
+macro_rules! write_token_display {
+    ($f:expr, $tok:expr => { $($pat_arm:pat => $output:expr,)* }) => {
+        match $tok {
+            $($pat_arm => write!($f, "{}", $output)),*
+        }
+    };
+}
+
+impl Display for Token {
+    #[allow(unreachable_code)]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write_token_display!(f, self => {
+            Token::Error => "[Error Token]",
+            Token::Interger(i) => i,
+            Token::Float(_) => todo!(),
+            Token::String(_) => todo!(),
+            Token::Boolean(_) => todo!(),
+            Token::Ident(_) => todo!(),
+            Token::KeywordFn => todo!(),
+            Token::KeywordRet => todo!(),
+            Token::KeywordLet => todo!(),
+            Token::KeywordIf => todo!(),
+            Token::KeywordElse => todo!(),
+            Token::KeywordLoop => todo!(),
+            Token::Plus => todo!(),
+            Token::Minus => todo!(),
+            Token::Star => todo!(),
+            Token::Slash => todo!(),
+            Token::Percent => todo!(),
+            Token::Caret => todo!(),
+            Token::Not => todo!(),
+            Token::And => todo!(),
+            Token::Or => todo!(),
+            Token::AndAnd => todo!(),
+            Token::OrOr => todo!(),
+            Token::Shl => todo!(),
+            Token::Shr => todo!(),
+            Token::PlusEq => todo!(),
+            Token::MinusEq => todo!(),
+            Token::StarEq => todo!(),
+            Token::SlashEq => todo!(),
+            Token::PercentEq => todo!(),
+            Token::CaretEq => todo!(),
+            Token::AndEq => todo!(),
+            Token::OrEq => todo!(),
+            Token::ShlEq => todo!(),
+            Token::ShrEq => todo!(),
+            Token::Eq => todo!(),
+            Token::EqEq => todo!(),
+            Token::Ne => todo!(),
+            Token::Gt => todo!(),
+            Token::Lt => todo!(),
+            Token::Ge => todo!(),
+            Token::Le => todo!(),
+            Token::At => todo!(),
+            Token::Underscore => todo!(),
+            Token::Dot => todo!(),
+            Token::Semi => todo!(),
+            Token::Colon => todo!(),
+            Token::PathSep => todo!(),
+            Token::RArrow => todo!(),
+            Token::FatArrow => todo!(),
+            Token::Pound => todo!(),
+            Token::Dollar => todo!(),
+            Token::Question => todo!(),
+            Token::Tilde => todo!(),
+            Token::SingleQuotationMark => todo!(),
+            Token::Comma => todo!(),
+            Token::OpenDelimiter(delimiter) => match delimiter {
+                Delimiter::Parenthesis => "(",
+                Delimiter::Brace => "{",
+                Delimiter::Bracket => "[",
+            },
+            Token::CloseDelimiter(delimiter) => match delimiter {
+                Delimiter::Parenthesis => ")",
+                Delimiter::Brace => "}",
+                Delimiter::Bracket => "]",
+            },
+        })
+    }
 }

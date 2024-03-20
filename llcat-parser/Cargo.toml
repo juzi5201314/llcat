@@ -14,3 +14,4 @@ spin.workspace = true
 paste.workspace = true
 chumsky = { git = "https://github.com/zesterer/chumsky", rev = "712af66", features = ["memoization", "label", "sync"]}
 logos = "0.14.0"
+ariadne = { version = "0.4.0", features = ["auto-color"] }

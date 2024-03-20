@@ -1,28 +1,49 @@
+use ariadne::Color;
+use ariadne::Label;
+use ariadne::Report;
+use ariadne::ReportKind;
+use ariadne::Source;
 use chumsky::error::Rich;
 
 use chumsky::input::ValueInput;
+use chumsky::primitive::just;
 use chumsky::recursive::recursive;
 use chumsky::select;
 use chumsky::span::SimpleSpan;
+use chumsky::util::MaybeSync;
 use chumsky::ParseResult;
 use chumsky::Parser as _;
 
+use crate::ast::BinOp;
 use crate::ast::{Expr, Literal};
 use crate::token::lexer;
 use crate::token::token_stream;
+use crate::token::Delimiter;
 use crate::token::Token;
 use crate::token::TokenIter;
 
-pub type P<'a, Input: I<'a>> =
-    impl chumsky::Parser<'a, Input, Expr, chumsky::extra::Err<Rich<'a, Token>>>;
+macro_rules! P {
+    ($l:lifetime, $i:ty, $o:ty) => {
+        impl chumsky::Parser<$l, $i, $o, chumsky::extra::Err<Rich<$l, Token>>> + Clone + MaybeSync
+    };
+}
+
+/* pub type P<'a, Input: I<'a>, O> =
+impl chumsky::Parser<'a, Input, O, chumsky::extra::Err<Rich<'a, Token>>> + Clone + MaybeSync; */
 
 pub trait I<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 impl<'a, T> I<'a> for T where T: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 
-pub fn parse_src(src: &str) -> ParseResult<Expr, Rich<Token>> {
+pub fn parse_src(src: &str) -> Result<Expr, Vec<Rich<Token>>> {
     let tokens = lexer(src);
     //dbg!(tokens.clone().collect::<Vec<_>>());
-    parse_token(tokens, src.len())
+    parse_token(tokens, src.len()).into_result()
+}
+
+pub fn parse_src_and_print_error(src: &str) -> Result<Expr, ()> {
+    let tokens = lexer(src);
+    //dbg!(tokens.clone().collect::<Vec<_>>());
+    print_error(src, parse_token(tokens, src.len()).into_result())
 }
 
 pub fn parse_token<'s: 'a, 'a>(
@@ -32,20 +53,149 @@ pub fn parse_token<'s: 'a, 'a>(
     parser().parse(token_stream(tokens, eoi))
 }
 
-fn parser<'a, Input>() -> P<'a, Input>
+pub fn print_error<T>(src: &str, result: Result<T, Vec<Rich<Token>>>) -> Result<T, ()> {
+    match result {
+        Ok(t) => Ok(t),
+        Err(errs) => {
+            for err in errs {
+                let err = err.map_token(|c| c.to_string());
+                Report::build(ReportKind::Error, (), err.span().start)
+                    .with_message(err.to_string())
+                    .with_label(
+                        Label::new(err.span().into_range())
+                            .with_message(err.reason().to_string())
+                            .with_color(Color::Red),
+                    )
+                    .finish()
+                    .eprint(Source::from(src))
+                    .unwrap();
+            }
+            Err(())
+        }
+    }
+}
+
+fn parser<'a, Input>() -> P!('a, Input, Expr)
 where
     Input: I<'a>,
 {
     recursive(|_expr| {
-        let atom = select! {
-            Token::Interger(i) => Expr::Literal(Literal::Interger(i)),
-            Token::Float(f) => Expr::Literal(Literal::Float(f)),
-            Token::Boolean(b) => Expr::Literal(Literal::Boolean(b)),
-            Token::String(s) => Expr::Literal(Literal::String(s)),
+        let expr = expr_parser().boxed();
 
-            Token::Ident(id) => Expr::Ident(id),
-        };
-
-        atom
+        expr
     })
+}
+
+fn expr_parser<'a, Input>() -> P!('a, Input, Expr)
+where
+    Input: I<'a>,
+{
+    recursive(|_expr| {
+        let expr = recursive(|expr| {
+            let nested_expr = expr.clone().delimited_by(
+                just(Token::OpenDelimiter(Delimiter::Parenthesis)),
+                just(Token::CloseDelimiter(Delimiter::Parenthesis)),
+            );
+
+            let atom = atom_parser();
+
+            let ops = op_parser();
+            let mut last_parser = atom.or(nested_expr).boxed();
+            for op in ops {
+                last_parser = last_parser
+                    .clone()
+                    .foldl(op.then(last_parser.clone()).repeated(), |l, (op, r)| {
+                        Expr::Binary(op, Box::new(l), Box::new(r))
+                    })
+                    .boxed();
+            }
+
+            last_parser
+        });
+
+        expr
+    })
+}
+
+fn op_parser<'a, Input>() -> [P!('a, Input, BinOp); 10]
+where
+    Input: I<'a>,
+{
+    [
+        // as
+        select! {
+            Token::Star => BinOp::Mul,
+            Token::Slash => BinOp::Div,
+            Token::Percent => BinOp::Mod,
+        }
+        .boxed(),
+        select! {
+            Token::Plus => BinOp::Add,
+            Token::Minus => BinOp::Sub,
+        }
+        .boxed(),
+        select! {
+            Token::Shl => BinOp::Shl,
+            Token::Shr => BinOp::Shr,
+        }
+        .boxed(),
+        select! {
+            Token::And => BinOp::BitAnd,
+        }
+        .boxed(),
+        select! {
+            Token::Caret => BinOp::BitXor,
+        }
+        .boxed(),
+        select! {
+            Token::Or => BinOp::BitOr,
+        }
+        .boxed(),
+        select! {
+            Token::Lt => BinOp::Lt,
+            Token::Gt => BinOp::Gt,
+            Token::Le => BinOp::Le,
+            Token::Lt => BinOp::Lt,
+            Token::Eq => BinOp::Eq,
+            Token::Ne => BinOp::Ne,
+        }
+        .boxed(),
+        select! {
+            Token::AndAnd => BinOp::And,
+        }
+        .boxed(),
+        select! {
+            Token::OrOr => BinOp::Or,
+        }
+        .boxed(),
+        // .. | ..=
+        select! {
+            Token::EqEq => BinOp::Eq,
+            Token::PlusEq => BinOp::AddEq,
+            Token::MinusEq => BinOp::SubEq,
+            Token::StarEq => BinOp::MulEq,
+            Token::SlashEq => BinOp::DivEq,
+            Token::PercentEq => BinOp::ModEq,
+            Token::AndEq => BinOp::BitAndEq,
+            Token::CaretEq => BinOp::BitXorEq,
+            Token::OrEq => BinOp::BitOrEq,
+            Token::ShlEq => BinOp::ShlEq,
+            Token::ShrEq => BinOp::ShrEq,
+        }
+        .boxed(),
+    ]
+}
+
+fn atom_parser<'a, Input>() -> P!('a, Input, Expr)
+where
+    Input: I<'a>,
+{
+    select! {
+        Token::Interger(i) => Expr::Literal(Literal::Interger(i)),
+        Token::Float(f) => Expr::Literal(Literal::Float(f)),
+        Token::Boolean(b) => Expr::Literal(Literal::Boolean(b)),
+        Token::String(s) => Expr::Literal(Literal::String(s)),
+
+        Token::Ident(id) => Expr::Ident(id),
+    }
 }

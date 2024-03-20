@@ -1,11 +1,14 @@
 use smol_str::SmolStr;
 
+use super::binop::BinOp;
 use super::Literal;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Literal),
     Ident(SmolStr),
+
+    Binary(BinOp, Box<Expr>, Box<Expr>),
 
     Call(String, Vec<Expr>),
     Let {
