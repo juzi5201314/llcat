@@ -272,7 +272,7 @@ impl Display for Token {
         write_token_display!(f, self => {
             Token::Error => "[Error Token]",
             Token::Interger(i) => i,
-            Token::Float(f) => f,
+            Token::Float(float) => *float,
             Token::String(s) => format!("\"{}\"", s),
             Token::Boolean(b) => b,
             Token::Ident(id) => id,
