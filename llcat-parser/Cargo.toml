@@ -8,6 +8,8 @@ authors.workspace = true
 ahash.workspace = true
 anyhow.workspace = true
 smallvec.workspace = true
+smol_str.workspace = true
+bumpalo.workspace = true
+spin.workspace = true
 chumsky = { git = "https://github.com/zesterer/chumsky", rev = "712af66", features = ["memoization", "label", "sync"]}
 logos = "0.14.0"
-smol_str.workspace = true
