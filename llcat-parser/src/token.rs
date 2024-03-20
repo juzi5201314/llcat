@@ -16,7 +16,7 @@ pub enum Token {
     Interger(i64),
     #[regex(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?", |lex| lex.slice().parse::<f64>().unwrap())]
     Float(f64),
-    #[regex(r#""([^"\\]|\\["\\bnfrt]|u[a-fA-F0-9]{4})*""#, |lex| SmolStr::from(&lex.slice()[1..lex.slice().len() - 1]))]
+    #[regex(r#""([^"\\]|\\["\\0abnfrt]|u[a-fA-F0-9]{4})*""#, lex_string)]
     String(SmolStr),
     #[token("false", |_| false)]
     #[token("true", |_| true)]
@@ -54,6 +54,36 @@ fn to_i64(lex: &mut Lexer<Token>) -> Option<i64> {
     }
     .ok()
     .map(|i| if neg { -i } else { i })
+}
+
+fn lex_string(lex: &mut Lexer<Token>) -> SmolStr {
+    let chars = lex.slice()[1..lex.slice().len() - 1].chars();
+    let mut s: Vec<char> = Vec::with_capacity(lex.slice().len());
+    let mut escape = false;
+
+    for ch in chars {
+        if escape {
+            match ch {
+                'n' => s.push('\n'),
+                't' => s.push('\t'),
+                'r' => s.push('\r'),
+                '0' => s.push('\x00'),
+                'a' => s.push('\x07'),
+                'b' => s.push('\x08'),
+                'f' => s.push('\x0c'),
+                '\\' => s.push('\\'),
+                '"' => s.push('"'),
+                ch => panic!("unknown escape char: {}", ch),
+            }
+            escape = false;
+        } else if ch == '\\' {
+            escape = true;
+        } else {
+            s.push(ch);
+        }
+    }
+   
+    SmolStr::from_iter(s)
 }
 
 pub type TokenIter<'s> = impl Iterator<Item = (Token, SimpleSpan)> + Clone;
