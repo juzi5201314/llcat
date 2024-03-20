@@ -28,6 +28,22 @@ pub enum Token {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| SmolStr::from(lex.slice()), priority = 20)]
     Ident(SmolStr),
 
+    // keyword
+    #[token("fn")]
+    KeywordFn,
+    #[token("ret")]
+    KeywordRet,
+    #[token("let")]
+    KeywordLet,
+    
+    // control flow
+    #[token("if")]
+    KeywordIf,
+    #[token("else")]
+    KeywordElse,
+    #[token("loop")]
+    KeywordLoop,
+
     // punctuation symbol
     #[token("+")]
     Plus,
