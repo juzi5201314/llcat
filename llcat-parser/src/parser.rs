@@ -13,6 +13,12 @@ use crate::token::token_stream;
 use crate::token::Token;
 use crate::token::TokenIter;
 
+pub type P<'a, Input: I<'a>> =
+    impl chumsky::Parser<'a, Input, Expr, chumsky::extra::Err<Rich<'a, Token>>>;
+
+pub trait I<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
+impl<'a, T> I<'a> for T where T: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
+
 pub fn parse_src(src: &str) -> ParseResult<Expr, Rich<Token>> {
     let tokens = lexer(src);
     //dbg!(tokens.clone().collect::<Vec<_>>());
@@ -26,9 +32,9 @@ pub fn parse_token<'s: 'a, 'a>(
     parser().parse(token_stream(tokens, eoi))
 }
 
-fn parser<'s, I>() -> impl chumsky::Parser<'s, I, Expr, chumsky::extra::Err<Rich<'s, Token>>>
+fn parser<'a, Input>() -> P<'a, Input>
 where
-    I: ValueInput<'s, Token = Token, Span = SimpleSpan>,
+    Input: I<'a>,
 {
     recursive(|_expr| {
         let atom = select! {
@@ -43,8 +49,3 @@ where
         atom
     })
 }
-
-/* fn interger_parser<'s>() -> Parser<'s> {
-    let int = text::int(10).map(|s: &str| Expr::Literal(Literal::Interger(s.parse().unwrap())));
-    int.or(int)
-} */
