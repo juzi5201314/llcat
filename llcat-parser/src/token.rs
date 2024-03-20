@@ -276,7 +276,7 @@ impl Display for Token {
             Token::String(s) => format!("\"{}\"", s),
             Token::Boolean(b) => b,
             Token::Ident(id) => id,
-            Token::KeywordFn => "fu",
+            Token::KeywordFn => "fn",
             Token::KeywordRet => "ret",
             Token::KeywordLet => "let",
             Token::KeywordIf => "if",
