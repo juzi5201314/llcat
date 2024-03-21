@@ -73,12 +73,19 @@ fn stmt_block_test() {
 
 #[test]
 fn unary_expr_test() {
-    assert_matches_expr!("!(1)", Unary(UnOp::Not, box Literal(Interger(1))));
     assert_matches_expr!(
-        "-(1 + 1)",
+        "!1 + 2",
+        Binary(
+            BinOp::Add,
+            box Unary(UnOp::Not, box Literal(Interger(1))),
+            box Literal(Interger(2)),
+        )
+    );
+    assert_matches_expr!(
+        "-(1 + 2)",
         Unary(
             UnOp::Neg,
-            box Binary(BinOp::Add, box Literal(Interger(1)), box Literal(Interger(1))),
+            box Binary(BinOp::Add, box Literal(Interger(1)), box Literal(Interger(2))),
         )
     );
 }

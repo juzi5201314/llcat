@@ -196,22 +196,27 @@ where
 
             let atom = atom_parser();
             let binops = binop_parser();
-            let unop = unop_parser()
-                .then(expr)
-                .map(|(op, expr)| Expr::Unary(op, Box::new(expr)));
 
-            let mut last_parser = atom.or(unop).or(block).or(nested_expr).boxed();
+            let p1 = atom.or(block).or(nested_expr);
+
+            let unary = unop_parser()
+                .repeated()
+                .foldr(p1, |unop, expr| Expr::Unary(unop, Box::new(expr)));
+
+            let p2 = unary;
+
+            let mut binary = p2.boxed();
 
             for op in binops {
-                last_parser = last_parser
+                binary = binary
                     .clone()
-                    .foldl(op.then(last_parser.clone()).repeated(), |l, (op, r)| {
+                    .foldl(op.then(binary.clone()).repeated(), |l, (op, r)| {
                         Expr::Binary(op, Box::new(l), Box::new(r))
                     })
                     .boxed();
             }
 
-            last_parser
+            binary
         });
 
         expr
