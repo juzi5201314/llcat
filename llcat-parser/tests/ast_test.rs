@@ -6,6 +6,7 @@ use llcat_parser::ast::BinOp;
 use llcat_parser::ast::Expr::*;
 use llcat_parser::ast::Literal::*;
 use llcat_parser::ast::Stmt::*;
+use llcat_parser::ast::UnOp;
 use llcat_parser::parser::Parser;
 
 macro_rules! assert_matches_expr {
@@ -67,6 +68,18 @@ fn stmt_block_test() {
             box Literal(Interger(3)),
             box Literal(Interger(4)),
         ))])
+    );
+}
+
+#[test]
+fn unary_expr_test() {
+    assert_matches_expr!("!(1)", Unary(UnOp::Not, box Literal(Interger(1))));
+    assert_matches_expr!(
+        "-(1 + 1)",
+        Unary(
+            UnOp::Neg,
+            box Binary(BinOp::Add, box Literal(Interger(1)), box Literal(Interger(1))),
+        )
     );
 }
 

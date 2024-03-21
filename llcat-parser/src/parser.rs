@@ -17,6 +17,7 @@ use chumsky::Parser as _;
 use crate::ast::BinOp;
 use crate::ast::Block;
 use crate::ast::Stmt;
+use crate::ast::UnOp;
 use crate::ast::{Expr, Literal};
 use crate::small_vec::ContainerWrapper;
 use crate::token::lexer;
@@ -194,10 +195,14 @@ where
                 });
 
             let atom = atom_parser();
+            let binops = binop_parser();
+            let unop = unop_parser()
+                .then(expr)
+                .map(|(op, expr)| Expr::Unary(op, Box::new(expr)));
 
-            let ops = op_parser();
-            let mut last_parser = atom.or(block).or(nested_expr).boxed();
-            for op in ops {
+            let mut last_parser = atom.or(unop).or(block).or(nested_expr).boxed();
+
+            for op in binops {
                 last_parser = last_parser
                     .clone()
                     .foldl(op.then(last_parser.clone()).repeated(), |l, (op, r)| {
@@ -213,7 +218,17 @@ where
     })
 }
 
-fn op_parser<'a, Input>() -> [P!('a, Input, BinOp); 10]
+fn unop_parser<'a, Input>() -> P!('a, Input, UnOp)
+where
+    Input: I<'a>,
+{
+    select! {
+        Token::Minus => UnOp::Neg,
+        Token::Not => UnOp::Not,
+    }
+}
+
+fn binop_parser<'a, Input>() -> [P!('a, Input, BinOp); 10]
 where
     Input: I<'a>,
 {
