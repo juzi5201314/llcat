@@ -6,23 +6,35 @@ use llcat_parser::ast::BinOp;
 use llcat_parser::ast::Expr::*;
 use llcat_parser::ast::Literal::*;
 use llcat_parser::ast::Stmt::*;
-use llcat_parser::parser;
+use llcat_parser::parser::Parser;
 
 macro_rules! assert_matches_expr {
     ($src:expr; err) => {
-        std::assert_matches::assert_matches!(parser::parse_expr($src, false), Err(_))
+        {
+            let parser = Parser::new($src).without_print_error();
+            std::assert_matches::assert_matches!(parser.parse_once_expr($src), Err(_))
+        }
     };
     ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
-        std::assert_matches::assert_matches!(parser::parse_expr($src, true), Ok($ast) $(if $($if)*)?)
+        {
+            let parser = Parser::new($src);
+            std::assert_matches::assert_matches!(parser.parse_once_expr($src), Ok($ast) $(if $($if)*)?)
+        }
     };
 }
 
 macro_rules! assert_matches_stmt {
     ($src:expr; err) => {
-        std::assert_matches::assert_matches!(parser::parse_src($src, false), Err(_))
+        {
+            let parser = Parser::new($src).without_print_error();
+            std::assert_matches::assert_matches!(parser.parse(), Err(_));
+        }
     };
     ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
-        std::assert_matches::assert_matches!(parser::parse_src($src, true), Ok($ast) $(if $($if)*)?)
+        {
+            let parser = Parser::new($src);
+            std::assert_matches::assert_matches!(parser.parse(), Ok($ast) $(if $($if)*)?);
+        }
     };
 }
 
@@ -42,7 +54,7 @@ fn stmt_block_test() {
                 }),
                 box Literal(Interger(5)),
             ),
-        )) if matches!(block1.as_slice(), &[Expr(box Binary(
+        )) if matches!(&*block1, &[Expr(box Binary(
             BinOp::Mul,
             box Literal(Interger(6)),
             box Literal(Interger(6)),

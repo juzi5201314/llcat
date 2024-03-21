@@ -12,28 +12,78 @@ use chumsky::select;
 use chumsky::span::SimpleSpan;
 use chumsky::util::MaybeSync;
 use chumsky::IterParser;
-use chumsky::ParseResult;
 use chumsky::Parser as _;
 
 use crate::ast::BinOp;
 use crate::ast::Block;
 use crate::ast::Stmt;
 use crate::ast::{Expr, Literal};
-use crate::small_vec::SmallVec1;
 use crate::token::lexer;
 use crate::token::token_stream;
 use crate::token::Delimiter;
 use crate::token::Token;
-use crate::token::TokenIter;
 
 macro_rules! P {
     ($l:lifetime, $i:ty, $o:ty) => {
-        impl chumsky::Parser<$l, $i, $o, chumsky::extra::Full<Rich<$l, Token>, (), ParserContext>> + Clone + MaybeSync
+        impl chumsky::Parser<$l, $i, $o, chumsky::extra::Full<Rich<$l, Token>, (), ()>> + Clone + MaybeSync
     };
 }
 
 pub trait I<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 impl<'a, T> I<'a> for T where T: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
+
+pub struct Parser<'s> {
+    pub src: &'s str,
+    pub ctx: ParserContext,
+    print_error: bool,
+}
+
+impl<'s> Parser<'s> {
+    pub fn new(src: &'s str) -> Self {
+        Self {
+            src,
+            ctx: ParserContext::default(),
+            print_error: true,
+        }
+    }
+
+    pub fn with_ctx(src: &'s str, ctx: ParserContext) -> Self {
+        Self {
+            src,
+            ctx,
+            print_error: true,
+        }
+    }
+
+    pub fn without_print_error(mut self) -> Self {
+        self.print_error = false;
+        self
+    }
+
+    pub fn parse(&self) -> Result<Stmt, Vec<Rich<'_, Token>>> {
+        let tokens = lexer(&self.src);
+        let result = parser(&self.ctx)
+            .parse(token_stream(tokens, self.src.len()))
+            .into_result();
+        if self.print_error {
+            print_error(&self.src, result).map_err(|_| Vec::new())
+        } else {
+            result
+        }
+    }
+
+    pub fn parse_once_expr(&self, src: &'s str) -> Result<Expr, Vec<Rich<'_, Token>>> {
+        let tokens = lexer(src);
+        let result = expr_parser(&self.ctx)
+            .parse(token_stream(tokens, src.len()))
+            .into_result();
+        if self.print_error {
+            print_error(src, result).map_err(|_| Vec::new())
+        } else {
+            result
+        }
+    }
+}
 
 pub struct ParserContext {}
 
@@ -43,24 +93,7 @@ impl Default for ParserContext {
     }
 }
 
-pub fn parse_src(src: &str, print_err: bool) -> Result<Stmt, Vec<Rich<Token>>> {
-    let tokens = lexer(src);
-    let result = parse_token(tokens, src.len()).into_result();
-    if print_err {
-        print_error(src, result).map_err(|_| Vec::new())
-    } else {
-        result
-    }
-}
-
-pub fn parse_token<'s: 'a, 'a>(
-    tokens: TokenIter<'s>,
-    eoi: usize,
-) -> ParseResult<Stmt, Rich<'a, Token>> {
-    parser().parse(token_stream(tokens, eoi))
-}
-
-pub fn parse_expr(src: &str, print_err: bool) -> Result<Expr, Vec<Rich<Token>>> {
+/* pub fn parse_expr(src: &str, print_err: bool) -> Result<Expr, Vec<Rich<Token>>> {
     let tokens = lexer(src);
     let result = expr_parser()
         .parse(token_stream(tokens, src.len()))
@@ -70,7 +103,7 @@ pub fn parse_expr(src: &str, print_err: bool) -> Result<Expr, Vec<Rich<Token>>> 
     } else {
         result
     }
-}
+} */
 
 pub fn print_error<T>(src: &str, result: Result<T, Vec<Rich<Token>>>) -> Result<T, ()> {
     match result {
@@ -94,7 +127,7 @@ pub fn print_error<T>(src: &str, result: Result<T, Vec<Rich<Token>>>) -> Result<
     }
 }
 
-fn parser<'a, Input>() -> P!('a, Input, Stmt)
+fn parser<'a, Input>(ctx: &'a ParserContext) -> P!('a, Input, Stmt)
 where
     Input: I<'a>,
 {
@@ -103,12 +136,12 @@ where
 
         stmt
     }) */
-    let stmt = stmt_parser(expr_parser()).boxed();
+    let stmt = stmt_parser(expr_parser(ctx), ctx).boxed();
 
     stmt
 }
 
-fn stmt_parser<'a, Input>(e: P!('a, Input, Expr)) -> P!('a, Input, Stmt)
+fn stmt_parser<'a, Input>(e: P!('a, Input, Expr), _ctx: &'a ParserContext) -> P!('a, Input, Stmt)
 where
     Input: I<'a>,
 {
@@ -129,7 +162,7 @@ where
     //let expr = expr_parser();
 }
 
-fn expr_parser<'a, Input>() -> P!('a, Input, Expr)
+fn expr_parser<'a, Input>(ctx: &'a ParserContext) -> P!('a, Input, Expr)
 where
     Input: I<'a>,
 {
@@ -140,7 +173,7 @@ where
                 just(Token::CloseDelimiter(Delimiter::Parenthesis)),
             );
 
-            let stmt = stmt_parser::<Input>(expr.clone());
+            let stmt = stmt_parser::<Input>(expr.clone(), ctx);
             let block = stmt
                 .clone()
                 .filter(|stmt| !matches!(stmt, Stmt::Expr(_)))
