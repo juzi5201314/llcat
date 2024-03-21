@@ -6,7 +6,7 @@ use logos::{Lexer, Logos};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 
-use crate::small_vec::SmallVec8;
+use crate::small_vec::{SmallVec32, SmallVec8};
 
 #[derive(Logos, Clone, PartialEq, Debug)]
 #[logos(skip r"[ \t\r\n\f]+")]
@@ -196,7 +196,7 @@ fn lex_i64(lex: &mut Lexer<Token>) -> Option<i64> {
 
 fn lex_string(lex: &mut Lexer<Token>) -> SmolStr {
     let chars = lex.slice()[1..lex.slice().len() - 1].chars();
-    let mut s = Vec::with_capacity(lex.slice().len());
+    let mut s = SmallVec32::with_capacity(lex.slice().len());
     let mut escape = false;
     let mut unicode_byte = None;
 

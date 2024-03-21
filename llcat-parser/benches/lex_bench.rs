@@ -10,6 +10,20 @@ extern crate test;
 type Consume = SmallVec<[(Token, SimpleSpan); 8]>;
 
 #[bench]
+fn bench_lex_string(b: &mut Bencher) {
+    b.iter(|| {
+        let _ = black_box(lexer("\"string\"").collect::<Consume>());
+    });
+}
+
+#[bench]
+fn bench_lex_string_on_heap(b: &mut Bencher) {
+    b.iter(|| {
+        let _ = black_box(lexer("\"string127335cb323292b8127335cb323292b8\"").collect::<Consume>());
+    });
+}
+
+#[bench]
 fn bench_lex_str(b: &mut Bencher) {
     b.iter(|| {
         let _ = black_box(lexer("ident").collect::<Consume>());
