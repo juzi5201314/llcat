@@ -18,6 +18,7 @@ use crate::ast::BinOp;
 use crate::ast::Block;
 use crate::ast::Stmt;
 use crate::ast::{Expr, Literal};
+use crate::small_vec::ContainerWrapper;
 use crate::token::lexer;
 use crate::token::token_stream;
 use crate::token::Delimiter;
@@ -178,19 +179,18 @@ where
                 .clone()
                 .filter(|stmt| !matches!(stmt, Stmt::Expr(_)))
                 .repeated()
-                .collect::<Vec<_>>()
+                .collect::<ContainerWrapper<[_; 3]>>()
                 .then(stmt.filter(|stmt| matches!(stmt, Stmt::Expr(_))).or_not())
                 .delimited_by(
                     just(Token::OpenDelimiter(Delimiter::Brace)),
                     just(Token::CloseDelimiter(Delimiter::Brace)),
                 )
-                .map(|(mut stmts, ret)| {
+                .map(|(stmts, ret)| {
+                    let mut stmts = stmts.0;
                     if let Some(ret) = ret {
                         stmts.push(ret);
                     }
-                    Expr::Block(Block {
-                        stmts: stmts.into(),
-                    })
+                    Expr::Block(Block { stmts })
                 });
 
             let atom = atom_parser();
