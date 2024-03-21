@@ -1,4 +1,5 @@
 #![feature(type_alias_impl_trait)]
+#![feature(allocator_api)]
 #![allow(dead_code)]
 
 pub mod ast;

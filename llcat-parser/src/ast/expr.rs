@@ -1,7 +1,7 @@
 use smol_str::SmolStr;
 
 use super::binop::BinOp;
-use super::Literal;
+use super::{Block, Literal};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
@@ -9,6 +9,8 @@ pub enum Expr {
     Ident(SmolStr),
 
     Binary(BinOp, Box<Expr>, Box<Expr>),
+
+    Block(Block),
 
     Call(String, Vec<Expr>),
     Let {

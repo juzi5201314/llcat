@@ -1,23 +1,66 @@
 #![feature(assert_matches)]
 #![feature(box_patterns)]
 
+use llcat_parser::ast;
 use llcat_parser::ast::BinOp;
 use llcat_parser::ast::Expr::*;
 use llcat_parser::ast::Literal::*;
+use llcat_parser::ast::Stmt::*;
 use llcat_parser::parser;
 
-macro_rules! assert_matches {
+macro_rules! assert_matches_expr {
     ($src:expr; err) => {
-        std::assert_matches::assert_matches!(parser::parse_src($src), Err(_))
+        std::assert_matches::assert_matches!(parser::parse_expr($src, false), Err(_))
     };
     ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
-        std::assert_matches::assert_matches!(parser::parse_src_and_print_error($src), Ok($ast) $(if $($if)*)?)
+        std::assert_matches::assert_matches!(parser::parse_expr($src, true), Ok($ast) $(if $($if)*)?)
+    };
+}
+
+macro_rules! assert_matches_stmt {
+    ($src:expr; err) => {
+        std::assert_matches::assert_matches!(parser::parse_src($src, false), Err(_))
+    };
+    ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
+        std::assert_matches::assert_matches!(parser::parse_src($src, true), Ok($ast) $(if $($if)*)?)
     };
 }
 
 #[test]
+fn stmt_block_test() {
+    assert_matches_stmt!(
+        "{6 * 6} - ({1 + 2; 3 + 4} + 5)",
+        Expr(box Binary(
+            BinOp::Sub,
+            box Block(ast::Block {
+                stmts: block1,
+            }),
+            box Binary(
+                BinOp::Add,
+                box Block(ast::Block {
+                    stmts: block2,
+                }),
+                box Literal(Interger(5)),
+            ),
+        )) if matches!(block1.as_slice(), &[Expr(box Binary(
+            BinOp::Mul,
+            box Literal(Interger(6)),
+            box Literal(Interger(6)),
+        ))]) || matches!(&*block2, &[SemiExpr(box Binary(
+            BinOp::Add,
+            box Literal(Interger(1)),
+            box Literal(Interger(2)),
+        )), Expr(box Binary(
+            BinOp::Add,
+            box Literal(Interger(3)),
+            box Literal(Interger(4)),
+        ))])
+    );
+}
+
+#[test]
 fn binary_expr_test() {
-    assert_matches!(
+    assert_matches_expr!(
         "1 * (2 + 3)",
         Binary(
             BinOp::Mul,
@@ -25,7 +68,7 @@ fn binary_expr_test() {
             box Binary(BinOp::Add, box Literal(Interger(2)), box Literal(Interger(3))),
         )
     );
-    assert_matches!(
+    assert_matches_expr!(
         "1 * 2 + 3",
         Binary(
             BinOp::Add,
@@ -33,7 +76,7 @@ fn binary_expr_test() {
             box Literal(Interger(3)),
         )
     );
-    assert_matches!(
+    assert_matches_expr!(
         "1.2 + arg0",
         Binary(
             BinOp::Add,
@@ -41,7 +84,7 @@ fn binary_expr_test() {
             box Ident(s),
         ) if s == "arg0"
     );
-    assert_matches!(
+    assert_matches_expr!(
         "1 + 2 * 3 - 4 / 6",
         Binary(
             BinOp::Sub,
@@ -57,46 +100,46 @@ fn binary_expr_test() {
 
 #[test]
 fn ident_test() {
-    assert_matches!("_true", Ident(id) if id == "_true");
-    assert_matches!("_01", Ident(id) if id == "_01");
-    assert_matches!("a0", Ident(id) if id == "a0");
-    assert_matches!("中"; err);
+    assert_matches_expr!("_true", Ident(id) if id == "_true");
+    assert_matches_expr!("_01", Ident(id) if id == "_01");
+    assert_matches_expr!("a0", Ident(id) if id == "a0");
+    assert_matches_expr!("中"; err);
 }
 
 #[test]
 fn bool_test() {
-    assert_matches!("true", Literal(Boolean(true)));
-    assert_matches!("false", Literal(Boolean(false)));
+    assert_matches_expr!("true", Literal(Boolean(true)));
+    assert_matches_expr!("false", Literal(Boolean(false)));
 }
 
 #[test]
 fn int_test() {
-    assert_matches!("-1", Literal(Interger(-1)));
-    assert_matches!("0b11", Literal(Interger(3)));
-    assert_matches!("0o10", Literal(Interger(8)));
-    assert_matches!("-0xff", Literal(Interger(-255)));
-    assert_matches!("10_000", Literal(Interger(10_000)));
-    assert_matches!("0xf_fff", Literal(Interger(0xf_fff)));
+    assert_matches_expr!("-1", Literal(Interger(-1)));
+    assert_matches_expr!("0b11", Literal(Interger(3)));
+    assert_matches_expr!("0o10", Literal(Interger(8)));
+    assert_matches_expr!("-0xff", Literal(Interger(-255)));
+    assert_matches_expr!("10_000", Literal(Interger(10_000)));
+    assert_matches_expr!("0xf_fff", Literal(Interger(0xf_fff)));
 }
 
 #[test]
 fn float_test() {
-    assert_matches!("1.0", Literal(Float(1.0)));
-    assert_matches!("0.1", Literal(Float(0.1)));
-    assert_matches!("1e1", Literal(Float(1e1)));
-    assert_matches!("1e-1", Literal(Float(1e-1)));
-    assert_matches!("1e+1", Literal(Float(1e+1)));
-    assert_matches!("-1e-1", Literal(Float(-1e-1)));
+    assert_matches_expr!("1.0", Literal(Float(1.0)));
+    assert_matches_expr!("0.1", Literal(Float(0.1)));
+    assert_matches_expr!("1e1", Literal(Float(1e1)));
+    assert_matches_expr!("1e-1", Literal(Float(1e-1)));
+    assert_matches_expr!("1e+1", Literal(Float(1e+1)));
+    assert_matches_expr!("-1e-1", Literal(Float(-1e-1)));
 }
 
 #[test]
 fn str_test() {
-    assert_matches!(r#" "'" "#, Literal(String(s)) if s == "'");
-    assert_matches!(r#" "\"" "#, Literal(String(s)) if s == "\"");
-    assert_matches!(r#" "\n" "#, Literal(String(s)) if s == "\n");
-    assert_matches!(r#" "\q" "#; err);
-    assert_matches!(r#" "\u{10FFFF}" "#, Literal(String(s)) if s == "\u{10FFFF}");
-    assert_matches!("\"true\"", Literal(String(s)) if s == "true");
-    assert_matches!("\"0\"", Literal(String(s)) if s == "0");
-    assert_matches!("\"中\"", Literal(String(s)) if s == "中");
+    assert_matches_expr!(r#" "'" "#, Literal(String(s)) if s == "'");
+    assert_matches_expr!(r#" "\"" "#, Literal(String(s)) if s == "\"");
+    assert_matches_expr!(r#" "\n" "#, Literal(String(s)) if s == "\n");
+    assert_matches_expr!(r#" "\q" "#; err);
+    assert_matches_expr!(r#" "\u{10FFFF}" "#, Literal(String(s)) if s == "\u{10FFFF}");
+    assert_matches_expr!("\"true\"", Literal(String(s)) if s == "true");
+    assert_matches_expr!("\"0\"", Literal(String(s)) if s == "0");
+    assert_matches_expr!("\"中\"", Literal(String(s)) if s == "中");
 }

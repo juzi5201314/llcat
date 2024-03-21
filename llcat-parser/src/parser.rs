@@ -11,11 +11,15 @@ use chumsky::recursive::recursive;
 use chumsky::select;
 use chumsky::span::SimpleSpan;
 use chumsky::util::MaybeSync;
+use chumsky::IterParser;
 use chumsky::ParseResult;
 use chumsky::Parser as _;
 
 use crate::ast::BinOp;
+use crate::ast::Block;
+use crate::ast::Stmt;
 use crate::ast::{Expr, Literal};
+use crate::small_vec::SmallVec1;
 use crate::token::lexer;
 use crate::token::token_stream;
 use crate::token::Delimiter;
@@ -24,33 +28,48 @@ use crate::token::TokenIter;
 
 macro_rules! P {
     ($l:lifetime, $i:ty, $o:ty) => {
-        impl chumsky::Parser<$l, $i, $o, chumsky::extra::Err<Rich<$l, Token>>> + Clone + MaybeSync
+        impl chumsky::Parser<$l, $i, $o, chumsky::extra::Full<Rich<$l, Token>, (), ParserContext>> + Clone + MaybeSync
     };
 }
-
-/* pub type P<'a, Input: I<'a>, O> =
-impl chumsky::Parser<'a, Input, O, chumsky::extra::Err<Rich<'a, Token>>> + Clone + MaybeSync; */
 
 pub trait I<'a>: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 impl<'a, T> I<'a> for T where T: ValueInput<'a, Token = Token, Span = SimpleSpan> {}
 
-pub fn parse_src(src: &str) -> Result<Expr, Vec<Rich<Token>>> {
-    let tokens = lexer(src);
-    //dbg!(tokens.clone().collect::<Vec<_>>());
-    parse_token(tokens, src.len()).into_result()
+pub struct ParserContext {}
+
+impl Default for ParserContext {
+    fn default() -> Self {
+        Self {}
+    }
 }
 
-pub fn parse_src_and_print_error(src: &str) -> Result<Expr, ()> {
+pub fn parse_src(src: &str, print_err: bool) -> Result<Stmt, Vec<Rich<Token>>> {
     let tokens = lexer(src);
-    //dbg!(tokens.clone().collect::<Vec<_>>());
-    print_error(src, parse_token(tokens, src.len()).into_result())
+    let result = parse_token(tokens, src.len()).into_result();
+    if print_err {
+        print_error(src, result).map_err(|_| Vec::new())
+    } else {
+        result
+    }
 }
 
 pub fn parse_token<'s: 'a, 'a>(
     tokens: TokenIter<'s>,
     eoi: usize,
-) -> ParseResult<Expr, Rich<'a, Token>> {
+) -> ParseResult<Stmt, Rich<'a, Token>> {
     parser().parse(token_stream(tokens, eoi))
+}
+
+pub fn parse_expr(src: &str, print_err: bool) -> Result<Expr, Vec<Rich<Token>>> {
+    let tokens = lexer(src);
+    let result = expr_parser()
+        .parse(token_stream(tokens, src.len()))
+        .into_result();
+    if print_err {
+        print_error(src, result).map_err(|_| Vec::new())
+    } else {
+        result
+    }
 }
 
 pub fn print_error<T>(src: &str, result: Result<T, Vec<Rich<Token>>>) -> Result<T, ()> {
@@ -75,15 +94,39 @@ pub fn print_error<T>(src: &str, result: Result<T, Vec<Rich<Token>>>) -> Result<
     }
 }
 
-fn parser<'a, Input>() -> P!('a, Input, Expr)
+fn parser<'a, Input>() -> P!('a, Input, Stmt)
 where
     Input: I<'a>,
 {
-    recursive(|_expr| {
-        let expr = expr_parser().boxed();
+    /* recursive(|_| {
+        let stmt = stmt_parser(expr_parser()).boxed();
 
-        expr
-    })
+        stmt
+    }) */
+    let stmt = stmt_parser(expr_parser()).boxed();
+
+    stmt
+}
+
+fn stmt_parser<'a, Input>(e: P!('a, Input, Expr)) -> P!('a, Input, Stmt)
+where
+    Input: I<'a>,
+{
+    let expr = e;
+    let _let = just(Token::KeywordLet)
+        .ignore_then(select! {
+            Token::Ident(id) => id
+        })
+        .then_ignore(just(Token::Eq))
+        .then(expr.clone())
+        .then_ignore(just(Token::Semi))
+        .map(|(id, expr)| Stmt::Let(id, Box::new(expr)));
+
+    expr.clone()
+        .then_ignore(just(Token::Semi))
+        .map(|expr| Stmt::SemiExpr(Box::new(expr)))
+        .or(expr.map(|expr| Stmt::Expr(Box::new(expr))))
+    //let expr = expr_parser();
 }
 
 fn expr_parser<'a, Input>() -> P!('a, Input, Expr)
@@ -97,10 +140,30 @@ where
                 just(Token::CloseDelimiter(Delimiter::Parenthesis)),
             );
 
+            let stmt = stmt_parser::<Input>(expr.clone());
+            let block = stmt
+                .clone()
+                .filter(|stmt| !matches!(stmt, Stmt::Expr(_)))
+                .repeated()
+                .collect::<Vec<_>>()
+                .then(stmt.filter(|stmt| matches!(stmt, Stmt::Expr(_))).or_not())
+                .delimited_by(
+                    just(Token::OpenDelimiter(Delimiter::Brace)),
+                    just(Token::CloseDelimiter(Delimiter::Brace)),
+                )
+                .map(|(mut stmts, ret)| {
+                    if let Some(ret) = ret {
+                        stmts.push(ret);
+                    }
+                    Expr::Block(Block {
+                        stmts: stmts.into(),
+                    })
+                });
+
             let atom = atom_parser();
 
             let ops = op_parser();
-            let mut last_parser = atom.or(nested_expr).boxed();
+            let mut last_parser = atom.or(block).or(nested_expr).boxed();
             for op in ops {
                 last_parser = last_parser
                     .clone()
