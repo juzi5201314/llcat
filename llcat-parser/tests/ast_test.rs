@@ -40,6 +40,17 @@ macro_rules! assert_matches_stmt {
 }
 
 #[test]
+fn let_stmt_test() {
+    assert_matches_stmt!(
+        "let x = 10;",
+        Let(
+            id,
+            box Literal(Interger(10)),
+        ) if id == "x"
+    );
+}
+
+#[test]
 fn stmt_block_test() {
     assert_matches_stmt!(
         "{6 * 6} - ({1 + 2; 3 + 4} + 5)",
@@ -73,10 +84,7 @@ fn stmt_block_test() {
 
 #[test]
 fn loop_expr_test() {
-    assert_matches_expr!(
-        "loop {}",
-        Loop(_)
-    );
+    assert_matches_expr!("loop {}", Loop(_));
     assert_matches_expr!(
         "1 + loop {}",
         Binary(BinOp::Add, box Literal(Interger(1)), box Loop(_))

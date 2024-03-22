@@ -147,19 +147,20 @@ fn stmt_parser<'a, Input>(expr: P!('a, Input, Expr), _ctx: &'a ParserContext) ->
 where
     Input: I<'a>,
 {
-    /* let _let = just(Token::KeywordLet)
-    .ignore_then(select! {
-        Token::Ident(id) => id
-    })
-    .then_ignore(just(Token::Eq))
-    .then(expr.clone())
-    .then_ignore(just(Token::Semi))
-    .map(|(id, expr)| Stmt::Let(id, Box::new(expr))); */
+    let _let = just(Token::KeywordLet)
+        .ignore_then(select! {
+            Token::Ident(id) => id
+        })
+        .then_ignore(just(Token::Eq))
+        .then(expr.clone())
+        .then_ignore(just(Token::Semi))
+        .map(|(id, expr)| Stmt::Let(id, Box::new(expr)));
 
     expr.clone()
         .then_ignore(just(Token::Semi))
         .map(|expr| Stmt::SemiExpr(Box::new(expr)))
         .or(expr.map(|expr| Stmt::Expr(Box::new(expr))))
+        .or(_let)
     //let expr = expr_parser();
 }
 

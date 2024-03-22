@@ -18,11 +18,6 @@ pub enum Expr {
     Break,
 
     Call(String, Vec<Expr>),
-    Let {
-        name: String,
-        rhs: Box<Expr>,
-        then: Box<Expr>,
-    },
     Fn {
         name: String,
         params: Vec<String>,
