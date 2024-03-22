@@ -72,6 +72,50 @@ fn stmt_block_test() {
 }
 
 #[test]
+fn loop_expr_test() {
+    assert_matches_expr!(
+        "loop {}",
+        Loop(_)
+    );
+    assert_matches_expr!(
+        "1 + loop {}",
+        Binary(BinOp::Add, box Literal(Interger(1)), box Loop(_))
+    );
+}
+
+#[test]
+fn return_expr_test() {
+    assert_matches_expr!(
+        "ret 1 + 2",
+        Return(box Binary(BinOp::Add, box Literal(Interger(1)), box Literal(Interger(2))))
+    );
+    assert_matches_stmt!(
+        "ret 1 + 2;",
+        SemiExpr(box Return(box Binary(
+            BinOp::Add,
+            box Literal(Interger(1)),
+            box Literal(Interger(2)),
+        )))
+    );
+    assert_matches_expr!(
+        "1 + (ret 1 + 2) + 3",
+        Binary(
+            BinOp::Add,
+            box Binary(
+                BinOp::Add,
+                box Literal(Interger(1)),
+                box Return(box Binary(
+                    BinOp::Add,
+                    box Literal(Interger(1)),
+                    box Literal(Interger(2)),
+                )),
+            ),
+            box Literal(Interger(3)),
+        )
+    );
+}
+
+#[test]
 fn if_expr_test() {
     assert_matches_expr!(
         "if 1 < 2 { true }",

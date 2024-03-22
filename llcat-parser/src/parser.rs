@@ -201,16 +201,25 @@ where
                 _ => unreachable!(),
             });
             let _if = just(Token::KeywordIf)
-                .ignore_then(expr)
+                .ignore_then(expr.clone())
                 .then(block_expr_to_block.clone())
                 .then(
                     just(Token::KeywordElse)
-                        .ignore_then(block_expr_to_block)
+                        .ignore_then(block_expr_to_block.clone())
                         .or_not(),
                 )
                 .map(|((cond, block), else_block)| Expr::If(Box::new(cond), block, else_block));
 
-            let p1 = atom.or(block).or(nested_expr).or(_if);
+            let ret = just(Token::KeywordRet)
+                .ignore_then(expr.clone())
+                //.then_ignore(just(Token::Semi).or_not())
+                .map(|expr| Expr::Return(Box::new(expr)));
+
+            let _loop = just(Token::KeywordLoop)
+                .ignore_then(block_expr_to_block.clone())
+                .map(|block| Expr::Loop(block));
+
+            let p1 = atom.or(block).or(nested_expr).or(_if).or(_loop).or(ret);
 
             let unary = unop_parser()
                 .repeated()
@@ -326,5 +335,7 @@ where
         Token::String(s) => Expr::Literal(Literal::String(s)),
 
         Token::Ident(id) => Expr::Ident(id),
+
+        Token::KeywordBreak => Expr::Break,
     }
 }

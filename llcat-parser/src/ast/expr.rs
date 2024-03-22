@@ -13,6 +13,9 @@ pub enum Expr {
 
     /// if cond { block } else { else_block }
     If(Box<Expr>, Block, Option<Block>),
+    Loop(Block),
+    Return(Box<Expr>),
+    Break,
 
     Call(String, Vec<Expr>),
     Let {
