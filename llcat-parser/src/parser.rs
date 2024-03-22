@@ -138,24 +138,23 @@ where
 
         stmt
     }) */
-    let stmt = stmt_parser(expr_parser(ctx), ctx).boxed();
+    let stmt = stmt_parser(expr_parser(ctx), ctx);
 
     stmt
 }
 
-fn stmt_parser<'a, Input>(e: P!('a, Input, Expr), _ctx: &'a ParserContext) -> P!('a, Input, Stmt)
+fn stmt_parser<'a, Input>(expr: P!('a, Input, Expr), _ctx: &'a ParserContext) -> P!('a, Input, Stmt)
 where
     Input: I<'a>,
 {
-    let expr = e;
-    let _let = just(Token::KeywordLet)
-        .ignore_then(select! {
-            Token::Ident(id) => id
-        })
-        .then_ignore(just(Token::Eq))
-        .then(expr.clone())
-        .then_ignore(just(Token::Semi))
-        .map(|(id, expr)| Stmt::Let(id, Box::new(expr)));
+    /* let _let = just(Token::KeywordLet)
+    .ignore_then(select! {
+        Token::Ident(id) => id
+    })
+    .then_ignore(just(Token::Eq))
+    .then(expr.clone())
+    .then_ignore(just(Token::Semi))
+    .map(|(id, expr)| Stmt::Let(id, Box::new(expr))); */
 
     expr.clone()
         .then_ignore(just(Token::Semi))
@@ -197,7 +196,21 @@ where
             let atom = atom_parser();
             let binops = binop_parser();
 
-            let p1 = atom.or(block).or(nested_expr);
+            let block_expr_to_block = block.clone().map(|block_expr| match block_expr {
+                Expr::Block(block) => block,
+                _ => unreachable!(),
+            });
+            let _if = just(Token::KeywordIf)
+                .ignore_then(expr)
+                .then(block_expr_to_block.clone())
+                .then(
+                    just(Token::KeywordElse)
+                        .ignore_then(block_expr_to_block)
+                        .or_not(),
+                )
+                .map(|((cond, block), else_block)| Expr::If(Box::new(cond), block, else_block));
+
+            let p1 = atom.or(block).or(nested_expr).or(_if);
 
             let unary = unop_parser()
                 .repeated()

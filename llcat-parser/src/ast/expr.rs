@@ -11,6 +11,9 @@ pub enum Expr {
 
     Block(Block),
 
+    /// if cond { block } else { else_block }
+    If(Box<Expr>, Block, Option<Block>),
+
     Call(String, Vec<Expr>),
     Let {
         name: String,

@@ -59,7 +59,7 @@ fn stmt_block_test() {
             BinOp::Mul,
             box Literal(Interger(6)),
             box Literal(Interger(6)),
-        ))]) || matches!(&*block2, &[SemiExpr(box Binary(
+        ))]) && matches!(&*block2, &[SemiExpr(box Binary(
             BinOp::Add,
             box Literal(Interger(1)),
             box Literal(Interger(2)),
@@ -68,6 +68,35 @@ fn stmt_block_test() {
             box Literal(Interger(3)),
             box Literal(Interger(4)),
         ))])
+    );
+}
+
+#[test]
+fn if_expr_test() {
+    assert_matches_expr!(
+        "if 1 < 2 { true }",
+        If(
+            box Binary(BinOp::Lt, box Literal(Interger(1)), box Literal(Interger(2))),
+            ast::Block { stmts: block1 },
+            None,
+        ) if matches!(&*block1, &[
+            Expr(box Literal(Boolean(true)))
+        ])
+    );
+
+    assert_matches_expr!(
+        "if value { true } else { false }",
+        If(
+            box Ident(id),
+            ast::Block { stmts: block1},
+            Some(ast::Block { stmts: block2 },),
+        ) if id == "value"
+        && matches!(&*block1, &[
+            Expr(box Literal(Boolean(true)))
+        ])
+        && matches!(&*block2, &[
+            Expr(box Literal(Boolean(false)))
+        ])
     );
 }
 
