@@ -14,7 +14,7 @@ pub enum Token {
     Error,
 
     // literal
-    #[regex(r"-?[_0-9]+", lex_i64, priority = 10)]
+    #[regex(r"-?[_0-9]+", lex_i64, priority = 3)]
     #[regex(r"-?0b[_0-1]+", lex_i64)]
     #[regex(r"-?0o[_0-7]+", lex_i64)]
     #[regex(r"-?0x[_0-9a-f]+", lex_i64)]
@@ -27,25 +27,25 @@ pub enum Token {
     #[token("true", |_| true, priority = 100)]
     Boolean(bool),
 
-    #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| SmolStr::from(lex.slice()), priority = 20)]
+    #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| SmolStr::from(lex.slice()), priority = 4)]
     Ident(SmolStr),
 
     // keyword
-    #[token("fn")]
+    #[token("fn", priority = 100)]
     KeywordFn,
-    #[token("let")]
+    #[token("let", priority = 100)]
     KeywordLet,
 
     // control flow
-    #[token("if")]
+    #[token("if", priority = 100)]
     KeywordIf,
-    #[token("else")]
+    #[token("else", priority = 100)]
     KeywordElse,
-    #[token("loop")]
+    #[token("loop", priority = 100)]
     KeywordLoop,
-    #[token("br")]
+    #[token("br", priority = 100)]
     KeywordBreak,
-    #[token("ret")]
+    #[token("ret", priority = 100)]
     KeywordRet,
 
     // punctuation symbol
