@@ -28,15 +28,47 @@ macro_rules! assert_matches_stmt {
     ($src:expr; err) => {
         {
             let parser = Parser::new($src).without_print_error();
+            std::assert_matches::assert_matches!(parser.parse_once_stmt($src), Err(_));
+        }
+    };
+    ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
+        {
+            let parser = Parser::new($src);
+            std::assert_matches::assert_matches!(parser.parse_once_stmt($src), Ok($ast) $(if $($if)*)?);
+        }
+    };
+}
+
+macro_rules! assert_matches {
+    ($src:expr; err) => {
+        {
+            let parser = Parser::new($src).without_print_error();
             std::assert_matches::assert_matches!(parser.parse(), Err(_));
         }
     };
     ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
         {
             let parser = Parser::new($src);
-            std::assert_matches::assert_matches!(parser.parse(), Ok($ast) $(if $($if)*)?);
+            std::assert_matches::assert_matches!(parser.parse(), Ok(v) if matches!(&*v, $ast $(if $($if)*)?));
         }
     };
+}
+
+#[test]
+fn fn_decl_test() {
+    assert_matches!(
+        "fn sum(a, b) { ret a + b; }",
+        &[
+            ast::Decl::Fn { ref name, ref params, body: ast::Block { ref stmts }, ref retrun_ty }
+        ] if name == "sum"
+            && params.as_slice() == &["a", "b"]
+            && retrun_ty == &None
+            && matches!(stmts.as_slice(), [SemiExpr(box Return(box Binary(
+                BinOp::Add,
+                box Ident(a),
+                box Ident(b),
+            )))] if a == "a" && b == "b")
+    );
 }
 
 #[test]
@@ -70,15 +102,32 @@ fn stmt_block_test() {
             BinOp::Mul,
             box Literal(Interger(6)),
             box Literal(Interger(6)),
-        ))]) && matches!(&*block2, &[SemiExpr(box Binary(
-            BinOp::Add,
-            box Literal(Interger(1)),
-            box Literal(Interger(2)),
-        )), Expr(box Binary(
-            BinOp::Add,
-            box Literal(Interger(3)),
-            box Literal(Interger(4)),
         ))])
+            && matches!(&*block2, &[SemiExpr(box Binary(
+                BinOp::Add,
+                box Literal(Interger(1)),
+                box Literal(Interger(2)),
+            )), Expr(box Binary(
+                BinOp::Add,
+                box Literal(Interger(3)),
+                box Literal(Interger(4)),
+            ))])
+    );
+}
+
+#[test]
+fn call_expr_test() {
+    assert_matches_expr!(
+        "1 + func1(arg0, arg1) - 1",
+        Binary(
+            BinOp::Sub,
+            box Binary(
+                BinOp::Add,
+                box Literal(Interger(1)),
+                box Call(id, args),
+            ),
+            box Literal(Interger(1)),
+        ) if id == "func1" && matches!(&args.as_slice(), &[Ident(a0), Ident(a1)] if a0 == "arg0" && a1 == "arg1")
     );
 }
 

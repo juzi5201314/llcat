@@ -1,3 +1,5 @@
+use crate::small_vec::SmallVec3;
+
 use super::{BinOp, Block, Literal, UnOp};
 use smol_str::SmolStr;
 
@@ -17,11 +19,6 @@ pub enum Expr {
     Return(Box<Expr>),
     Break,
 
-    Call(String, Vec<Expr>),
-    Fn {
-        name: String,
-        params: Vec<String>,
-        body: Box<Expr>,
-        then: Box<Expr>,
-    },
+    /// ident(arg0, arg1, ..);
+    Call(SmolStr, Box<SmallVec3<Expr>>),
 }

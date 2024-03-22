@@ -2,13 +2,13 @@ use smol_str::SmolStr;
 
 use crate::small_vec::SmallVec3;
 
-use super::Expr;
+use super::{Decl, Expr};
 
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Let(SmolStr, Box<Expr>),
-    Decl,
+    Decl(Box<Decl>),
     /// `expr`
     Expr(Box<Expr>),
     /// `expr;`

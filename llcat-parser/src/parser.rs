@@ -16,6 +16,7 @@ use chumsky::Parser as _;
 
 use crate::ast::BinOp;
 use crate::ast::Block;
+use crate::ast::Decl;
 use crate::ast::Stmt;
 use crate::ast::UnOp;
 use crate::ast::{Expr, Literal};
@@ -62,7 +63,7 @@ impl<'s> Parser<'s> {
         self
     }
 
-    pub fn parse(&self) -> Result<Stmt, Vec<Rich<'_, Token>>> {
+    pub fn parse(&self) -> Result<Vec<Decl>, Vec<Rich<'_, Token>>> {
         let tokens = lexer(&self.src);
         let result = parser(&self.ctx)
             .parse(token_stream(tokens, self.src.len()))
@@ -77,6 +78,18 @@ impl<'s> Parser<'s> {
     pub fn parse_once_expr(&self, src: &'s str) -> Result<Expr, Vec<Rich<'_, Token>>> {
         let tokens = lexer(src);
         let result = expr_parser(&self.ctx)
+            .parse(token_stream(tokens, src.len()))
+            .into_result();
+        if self.print_error {
+            print_error(src, result).map_err(|_| Vec::new())
+        } else {
+            result
+        }
+    }
+
+    pub fn parse_once_stmt(&self, src: &'s str) -> Result<Stmt, Vec<Rich<'_, Token>>> {
+        let tokens = lexer(src);
+        let result = stmt_parser(expr_parser(&self.ctx), &self.ctx)
             .parse(token_stream(tokens, src.len()))
             .into_result();
         if self.print_error {
@@ -129,18 +142,43 @@ pub fn print_error<T>(src: &str, result: Result<T, Vec<Rich<Token>>>) -> Result<
     }
 }
 
-fn parser<'a, Input>(ctx: &'a ParserContext) -> P!('a, Input, Stmt)
+fn parser<'a, Input>(ctx: &'a ParserContext) -> P!('a, Input, Vec<Decl>)
 where
     Input: I<'a>,
 {
-    /* recursive(|_| {
-        let stmt = stmt_parser(expr_parser()).boxed();
+    decl_parser(ctx).repeated().collect()
+}
 
-        stmt
-    }) */
-    let stmt = stmt_parser(expr_parser(ctx), ctx);
+fn decl_parser<'a, Input>(ctx: &'a ParserContext) -> P!('a, Input, Decl)
+where
+    Input: I<'a>,
+{
+    let ident = select! { Token::Ident(id) => id };
+    let expr = expr_parser(ctx);
+    let block = block_parser(expr, ctx);
 
-    stmt
+    let func = just(Token::KeywordFn)
+        .ignore_then(ident.clone())
+        .then(
+            ident
+                .clone()
+                .separated_by(just(Token::Comma))
+                .collect::<ContainerWrapper<[_; 6]>>()
+                .delimited_by(
+                    just(Token::OpenDelimiter(Delimiter::Parenthesis)),
+                    just(Token::CloseDelimiter(Delimiter::Parenthesis)),
+                ),
+        )
+        .then(ident.or_not())
+        .then(block)
+        .map(|(((name, params), retrun_ty), body)| Decl::Fn {
+            name,
+            params: params.0,
+            body,
+            retrun_ty,
+        });
+
+    func
 }
 
 fn stmt_parser<'a, Input>(expr: P!('a, Input, Expr), _ctx: &'a ParserContext) -> P!('a, Input, Stmt)
@@ -164,6 +202,32 @@ where
     //let expr = expr_parser();
 }
 
+fn block_parser<'a, Input>(
+    expr: P!('a, Input, Expr),
+    ctx: &'a ParserContext,
+) -> P!('a, Input, Block)
+where
+    Input: I<'a>,
+{
+    let stmt = stmt_parser::<Input>(expr.clone(), ctx);
+    stmt.clone()
+        .filter(|stmt| !matches!(stmt, Stmt::Expr(_)))
+        .repeated()
+        .collect::<ContainerWrapper<[_; 3]>>()
+        .then(stmt.filter(|stmt| matches!(stmt, Stmt::Expr(_))).or_not())
+        .delimited_by(
+            just(Token::OpenDelimiter(Delimiter::Brace)),
+            just(Token::CloseDelimiter(Delimiter::Brace)),
+        )
+        .map(|(stmts, ret)| {
+            let mut stmts = stmts.0;
+            if let Some(ret) = ret {
+                stmts.push(ret);
+            }
+            Block { stmts }
+        })
+}
+
 fn expr_parser<'a, Input>(ctx: &'a ParserContext) -> P!('a, Input, Expr)
 where
     Input: I<'a>,
@@ -175,40 +239,15 @@ where
                 just(Token::CloseDelimiter(Delimiter::Parenthesis)),
             );
 
-            let stmt = stmt_parser::<Input>(expr.clone(), ctx);
-            let block = stmt
-                .clone()
-                .filter(|stmt| !matches!(stmt, Stmt::Expr(_)))
-                .repeated()
-                .collect::<ContainerWrapper<[_; 3]>>()
-                .then(stmt.filter(|stmt| matches!(stmt, Stmt::Expr(_))).or_not())
-                .delimited_by(
-                    just(Token::OpenDelimiter(Delimiter::Brace)),
-                    just(Token::CloseDelimiter(Delimiter::Brace)),
-                )
-                .map(|(stmts, ret)| {
-                    let mut stmts = stmts.0;
-                    if let Some(ret) = ret {
-                        stmts.push(ret);
-                    }
-                    Expr::Block(Block { stmts })
-                });
+            let block = block_parser(expr.clone(), ctx);
 
             let atom = atom_parser();
             let binops = binop_parser();
 
-            let block_expr_to_block = block.clone().map(|block_expr| match block_expr {
-                Expr::Block(block) => block,
-                _ => unreachable!(),
-            });
             let _if = just(Token::KeywordIf)
                 .ignore_then(expr.clone())
-                .then(block_expr_to_block.clone())
-                .then(
-                    just(Token::KeywordElse)
-                        .ignore_then(block_expr_to_block.clone())
-                        .or_not(),
-                )
+                .then(block.clone())
+                .then(just(Token::KeywordElse).ignore_then(block.clone()).or_not())
                 .map(|((cond, block), else_block)| Expr::If(Box::new(cond), block, else_block));
 
             let ret = just(Token::KeywordRet)
@@ -217,10 +256,27 @@ where
                 .map(|expr| Expr::Return(Box::new(expr)));
 
             let _loop = just(Token::KeywordLoop)
-                .ignore_then(block_expr_to_block.clone())
+                .ignore_then(block.clone())
                 .map(|block| Expr::Loop(block));
 
-            let p1 = atom.or(block).or(nested_expr).or(_if).or(_loop).or(ret);
+            let call = (select! { Token::Ident(id) => id })
+                .then(
+                    expr.separated_by(just(Token::Comma))
+                        .collect::<ContainerWrapper<[_; 3]>>()
+                        .delimited_by(
+                            just(Token::OpenDelimiter(Delimiter::Parenthesis)),
+                            just(Token::CloseDelimiter(Delimiter::Parenthesis)),
+                        ),
+                )
+                .map(|(id, args)| Expr::Call(id, Box::new(args.0)));
+
+            let p1 = call
+                .or(atom)
+                .or(block.map(|block| Expr::Block(block)))
+                .or(nested_expr)
+                .or(_if)
+                .or(_loop)
+                .or(ret);
 
             let unary = unop_parser()
                 .repeated()
