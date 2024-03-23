@@ -13,6 +13,7 @@ use chumsky::span::SimpleSpan;
 use chumsky::util::MaybeSync;
 use chumsky::IterParser;
 use chumsky::Parser as _;
+use smol_str::SmolStr;
 
 use crate::ast::BinOp;
 use crate::ast::Block;
@@ -28,7 +29,7 @@ use crate::token::Token;
 
 macro_rules! P {
     ($l:lifetime, $i:ty, $o:ty) => {
-        impl chumsky::Parser<$l, $i, $o, chumsky::extra::Full<Rich<$l, Token>, (), ()>> + Clone + MaybeSync
+        impl chumsky::Parser<$l, $i, $o, chumsky::extra::Full<Rich<$l, Token>, ParserContext, ()>> + Clone + MaybeSync
     };
 }
 
@@ -63,10 +64,15 @@ impl<'s> Parser<'s> {
         self
     }
 
-    pub fn parse(&self) -> Result<Vec<Decl>, Vec<Rich<'_, Token>>> {
+    pub fn no_check(mut self) -> Self {
+        self.ctx.no_check = true;
+        self
+    }
+
+    pub fn parse(&mut self) -> Result<Vec<Decl>, Vec<Rich<'_, Token>>> {
         let tokens = lexer(&self.src);
-        let result = parser(&self.ctx)
-            .parse(token_stream(tokens, self.src.len()))
+        let result = parser()
+            .parse_with_state(token_stream(tokens, self.src.len()), &mut self.ctx)
             .into_result();
         if self.print_error {
             print_error(&self.src, result).map_err(|_| Vec::new())
@@ -75,10 +81,10 @@ impl<'s> Parser<'s> {
         }
     }
 
-    pub fn parse_once_expr(&self, src: &'s str) -> Result<Expr, Vec<Rich<'_, Token>>> {
+    pub fn parse_once_expr(&mut self, src: &'s str) -> Result<Expr, Vec<Rich<'_, Token>>> {
         let tokens = lexer(src);
-        let result = expr_parser(&self.ctx)
-            .parse(token_stream(tokens, src.len()))
+        let result = expr_parser()
+            .parse_with_state(token_stream(tokens, src.len()), &mut self.ctx)
             .into_result();
         if self.print_error {
             print_error(src, result).map_err(|_| Vec::new())
@@ -87,10 +93,10 @@ impl<'s> Parser<'s> {
         }
     }
 
-    pub fn parse_once_stmt(&self, src: &'s str) -> Result<Stmt, Vec<Rich<'_, Token>>> {
+    pub fn parse_once_stmt(&mut self, src: &'s str) -> Result<Stmt, Vec<Rich<'_, Token>>> {
         let tokens = lexer(src);
-        let result = stmt_parser(expr_parser(&self.ctx), &self.ctx)
-            .parse(token_stream(tokens, src.len()))
+        let result = stmt_parser(expr_parser())
+            .parse_with_state(token_stream(tokens, src.len()), &mut self.ctx)
             .into_result();
         if self.print_error {
             print_error(src, result).map_err(|_| Vec::new())
@@ -100,25 +106,47 @@ impl<'s> Parser<'s> {
     }
 }
 
-pub struct ParserContext {}
+pub struct ParserContext {
+    scope: Vec<small_map::SmallMap<16, SmolStr, (), ahash::RandomState>>,
+
+    no_check: bool,
+}
 
 impl Default for ParserContext {
     fn default() -> Self {
-        Self {}
+        let mut root_scope = Vec::with_capacity(8);
+        root_scope.push(small_map::SmallMap::new());
+        Self {
+            scope: root_scope,
+            no_check: false,
+        }
     }
 }
 
-/* pub fn parse_expr(src: &str, print_err: bool) -> Result<Expr, Vec<Rich<Token>>> {
-    let tokens = lexer(src);
-    let result = expr_parser()
-        .parse(token_stream(tokens, src.len()))
-        .into_result();
-    if print_err {
-        print_error(src, result).map_err(|_| Vec::new())
-    } else {
-        result
+impl ParserContext {
+    fn enter(&mut self) {
+        self.scope.push(small_map::SmallMap::new());
     }
-} */
+
+    fn exit(&mut self) {
+        self.scope.pop();
+    }
+
+    fn local(&mut self, id: SmolStr) {
+        self.scope.last_mut().unwrap().insert(id, ());
+    }
+
+    fn has(&self, key: &str) -> bool {
+        if self.no_check {
+            return true;
+        }
+        self.scope
+            .last()
+            .expect("scope is empty")
+            .get(key)
+            .is_some()
+    }
+}
 
 pub fn print_error<T>(src: &str, result: Result<T, Vec<Rich<Token>>>) -> Result<T, ()> {
     match result {
@@ -142,20 +170,20 @@ pub fn print_error<T>(src: &str, result: Result<T, Vec<Rich<Token>>>) -> Result<
     }
 }
 
-fn parser<'a, Input>(ctx: &'a ParserContext) -> P!('a, Input, Vec<Decl>)
+fn parser<'a, Input>() -> P!('a, Input, Vec<Decl>)
 where
     Input: I<'a>,
 {
-    decl_parser(ctx).repeated().collect()
+    decl_parser().repeated().collect()
 }
 
-fn decl_parser<'a, Input>(ctx: &'a ParserContext) -> P!('a, Input, Decl)
+fn decl_parser<'a, Input>() -> P!('a, Input, Decl)
 where
     Input: I<'a>,
 {
-    let ident = select! { Token::Ident(id) => id };
-    let expr = expr_parser(ctx);
-    let block = block_parser(expr, ctx);
+    let ident = ident_parser();
+    let expr = expr_parser();
+    let block = block_parser(expr);
 
     let func = just(Token::KeywordFn)
         .ignore_then(ident.clone())
@@ -170,25 +198,37 @@ where
                 ),
         )
         .then(ident.or_not())
+        .map_with(|o, e| {
+            e.state().enter();
+            let params = &o.0 .1;
+            for param in &params.0 {
+                e.state().local(param.clone());
+            }
+            o
+        })
         .then(block)
-        .map(|(((name, params), retrun_ty), body)| Decl::Fn {
-            name,
-            params: params.0,
-            body,
-            retrun_ty,
+        .map_with(|(((name, params), retrun_ty), body), e| {
+            // exit func block scope
+            e.state().exit();
+            // this func
+            e.state().local(name.clone());
+            Decl::Fn {
+                name,
+                params: params.0,
+                body,
+                retrun_ty,
+            }
         });
 
     func
 }
 
-fn stmt_parser<'a, Input>(expr: P!('a, Input, Expr), _ctx: &'a ParserContext) -> P!('a, Input, Stmt)
+fn stmt_parser<'a, Input>(expr: P!('a, Input, Expr)) -> P!('a, Input, Stmt)
 where
     Input: I<'a>,
 {
     let _let = just(Token::KeywordLet)
-        .ignore_then(select! {
-            Token::Ident(id) => id
-        })
+        .ignore_then(ident_parser())
         .then_ignore(just(Token::Eq))
         .then(expr.clone())
         .then_ignore(just(Token::Semi))
@@ -202,14 +242,11 @@ where
     //let expr = expr_parser();
 }
 
-fn block_parser<'a, Input>(
-    expr: P!('a, Input, Expr),
-    ctx: &'a ParserContext,
-) -> P!('a, Input, Block)
+fn block_parser<'a, Input>(expr: P!('a, Input, Expr)) -> P!('a, Input, Block)
 where
     Input: I<'a>,
 {
-    let stmt = stmt_parser::<Input>(expr.clone(), ctx);
+    let stmt = stmt_parser::<Input>(expr.clone());
     stmt.clone()
         .filter(|stmt| !matches!(stmt, Stmt::Expr(_)))
         .repeated()
@@ -228,7 +265,7 @@ where
         })
 }
 
-fn expr_parser<'a, Input>(ctx: &'a ParserContext) -> P!('a, Input, Expr)
+fn expr_parser<'a, Input>() -> P!('a, Input, Expr)
 where
     Input: I<'a>,
 {
@@ -239,7 +276,7 @@ where
                 just(Token::CloseDelimiter(Delimiter::Parenthesis)),
             );
 
-            let block = block_parser(expr.clone(), ctx);
+            let block = block_parser(expr.clone());
 
             let atom = atom_parser();
             let binops = binop_parser();
@@ -259,7 +296,7 @@ where
                 .ignore_then(block.clone())
                 .map(|block| Expr::Loop(block));
 
-            let call = (select! { Token::Ident(id) => id })
+            let call = value_parser()
                 .then(
                     expr.separated_by(just(Token::Comma))
                         .collect::<ContainerWrapper<[_; 3]>>()
@@ -268,6 +305,16 @@ where
                             just(Token::CloseDelimiter(Delimiter::Parenthesis)),
                         ),
                 )
+                .validate(|o, e, emitter| {
+                    let s: &mut ParserContext = e.state();
+                    if !s.has(&o.0) {
+                        emitter.emit(Rich::custom(
+                            e.span(),
+                            format!("cannot find id `{}` in this scope", &o.0),
+                        ))
+                    }
+                    o
+                })
                 .map(|(id, args)| Expr::Call(id, Box::new(args.0)));
 
             let p1 = call
@@ -391,8 +438,36 @@ where
         Token::Boolean(b) => Expr::Literal(Literal::Boolean(b)),
         Token::String(s) => Expr::Literal(Literal::String(s)),
 
-        Token::Ident(id) => Expr::Ident(id),
-
         Token::KeywordBreak => Expr::Break,
     }
+    .or(value_parser().map(Expr::Ident))
+}
+
+fn ident_parser<'a, Input>() -> P!('a, Input, SmolStr)
+where
+    Input: I<'a>,
+{
+    select! {
+        Token::Ident(id) => id,
+    }
+}
+
+fn value_parser<'a, Input>() -> P!('a, Input, SmolStr)
+where
+    Input: I<'a>,
+{
+    select! {
+        Token::Ident(id) => id,
+    }
+    .labelled("identifier")
+    .validate(|id, e, emitter| {
+        let s: &mut ParserContext = e.state();
+        if !s.has(&id) {
+            emitter.emit(Rich::custom(
+                e.span(),
+                format!("cannot find local `{}` in this scope", &id),
+            ))
+        }
+        id
+    })
 }

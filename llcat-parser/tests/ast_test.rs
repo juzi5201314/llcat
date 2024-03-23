@@ -12,13 +12,13 @@ use llcat_parser::parser::Parser;
 macro_rules! assert_matches_expr {
     ($src:expr; err) => {
         {
-            let parser = Parser::new($src).without_print_error();
+            let mut parser = Parser::new($src).without_print_error().no_check();
             std::assert_matches::assert_matches!(parser.parse_once_expr($src), Err(_))
         }
     };
     ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
         {
-            let parser = Parser::new($src);
+            let mut parser = Parser::new($src).no_check();
             std::assert_matches::assert_matches!(parser.parse_once_expr($src), Ok($ast) $(if $($if)*)?)
         }
     };
@@ -27,13 +27,13 @@ macro_rules! assert_matches_expr {
 macro_rules! assert_matches_stmt {
     ($src:expr; err) => {
         {
-            let parser = Parser::new($src).without_print_error();
+            let mut parser = Parser::new($src).without_print_error().no_check();
             std::assert_matches::assert_matches!(parser.parse_once_stmt($src), Err(_));
         }
     };
     ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
         {
-            let parser = Parser::new($src);
+            let mut parser = Parser::new($src).no_check();
             std::assert_matches::assert_matches!(parser.parse_once_stmt($src), Ok($ast) $(if $($if)*)?);
         }
     };
@@ -42,13 +42,13 @@ macro_rules! assert_matches_stmt {
 macro_rules! assert_matches {
     ($src:expr; err) => {
         {
-            let parser = Parser::new($src).without_print_error();
+            let mut parser = Parser::new($src).without_print_error();
             std::assert_matches::assert_matches!(parser.parse(), Err(_));
         }
     };
     ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
         {
-            let parser = Parser::new($src);
+            let mut parser = Parser::new($src);
             std::assert_matches::assert_matches!(parser.parse(), Ok(v) if matches!(&*v, $ast $(if $($if)*)?));
         }
     };

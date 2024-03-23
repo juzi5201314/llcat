@@ -15,3 +15,5 @@ paste.workspace = true
 chumsky = { git = "https://github.com/zesterer/chumsky", rev = "712af66", features = ["memoization", "label", "sync"]}
 logos = "0.14.0"
 ariadne = { version = "0.4.0", features = ["auto-color"] }
+boxcar = "0.2.4"
+small-map = { version = "0.1.3", default-features = false }
