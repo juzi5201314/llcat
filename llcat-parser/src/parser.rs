@@ -232,7 +232,10 @@ where
         .then_ignore(just(Token::Eq))
         .then(expr.clone())
         .then_ignore(just(Token::Semi))
-        .map(|(id, expr)| Stmt::Let(id, Box::new(expr)));
+        .map_with(|(id, expr), e| {
+            e.state().local(id.clone());
+            Stmt::Let(id, Box::new(expr))
+        });
 
     expr.clone()
         .then_ignore(just(Token::Semi))
