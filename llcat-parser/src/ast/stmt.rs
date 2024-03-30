@@ -8,6 +8,7 @@ use super::{Decl, Expr};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Let(SmolStr, Box<Expr>),
+    Assign(SmolStr, Box<Expr>),
     Decl(Box<Decl>),
     /// `expr`
     Expr(Box<Expr>),

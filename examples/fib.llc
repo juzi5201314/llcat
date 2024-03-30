@@ -1,0 +1,16 @@
+fn fib(n) {
+    let current = 0;
+    let last = 1;
+
+    let i = 0;
+    loop {
+        let a = current + last;
+        last = current;
+        current = a;
+        i += 1;
+        if i >= n {
+            break;
+        }
+    }
+    current
+}

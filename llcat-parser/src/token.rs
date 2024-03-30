@@ -43,7 +43,7 @@ pub enum Token {
     KeywordElse,
     #[token("loop", priority = 100)]
     KeywordLoop,
-    #[token("br", priority = 100)]
+    #[token("break", priority = 100)]
     KeywordBreak,
     #[token("ret", priority = 100)]
     KeywordRet,

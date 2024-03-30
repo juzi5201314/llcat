@@ -200,6 +200,8 @@ where
         .then(ident.or_not())
         .map_with(|o, e| {
             e.state().enter();
+            // add self to scope (recursion)
+            e.state().local(o.0 .0.clone());
             let params = &o.0 .1;
             for param in &params.0 {
                 e.state().local(param.clone());
@@ -207,11 +209,20 @@ where
             o
         })
         .then(block)
-        .map_with(|(((name, params), retrun_ty), body), e| {
+        .map_with(|(((name, params), retrun_ty), mut body), e| {
             // exit func block scope
             e.state().exit();
             // this func
             e.state().local(name.clone());
+
+            if let Some(Stmt::Expr(e)) = body.stmts.pop() {
+                if !matches!(&*e, Expr::Return(_)) {
+                    body.stmts.push(Stmt::Expr(Box::new(Expr::Return(e))))
+                } else {
+                    body.stmts.push(Stmt::Expr(e));
+                }
+            };
+
             Decl::Fn {
                 name,
                 params: params.0,
@@ -237,11 +248,26 @@ where
             Stmt::Let(id, Box::new(expr))
         });
 
-    expr.clone()
-        .then_ignore(just(Token::Semi))
-        .map(|expr| Stmt::SemiExpr(Box::new(expr)))
+    let assign = ident_parser()
+        .then_ignore(just(Token::Eq))
+        .then(expr.clone())
+        .then_ignore(just(Token::Semi).or_not())
+        .validate(|(id, expr), e, emitter| {
+            if !e.state().has(&id) {
+                emitter.emit(Rich::custom(
+                    e.span(),
+                    format!("cannot find id `{}` in this scope", &id),
+                ))
+            }
+            Stmt::Assign(id, Box::new(expr))
+        });
+
+    _let.or(assign)
+        .or(expr
+            .clone()
+            .then_ignore(just(Token::Semi))
+            .map(|expr| Stmt::SemiExpr(Box::new(expr))))
         .or(expr.map(|expr| Stmt::Expr(Box::new(expr))))
-        .or(_let)
     //let expr = expr_parser();
 }
 
@@ -251,7 +277,19 @@ where
 {
     let stmt = stmt_parser::<Input>(expr.clone());
     stmt.clone()
-        .filter(|stmt| !matches!(stmt, Stmt::Expr(_)))
+        .filter(|stmt| {
+            !matches!(stmt, Stmt::Expr(_))
+                || matches!(
+                    stmt,
+                    Stmt::Expr(
+                        box Expr::Block(_)
+                        | box Expr::If(_, _, _)
+                        | box Expr::Loop(_)
+                        | box Expr::Return(_)
+                        | box Expr::Break,
+                    )
+                )
+        })
         .repeated()
         .collect::<ContainerWrapper<[_; 3]>>()
         .then(stmt.filter(|stmt| matches!(stmt, Stmt::Expr(_))).or_not())
@@ -400,8 +438,7 @@ where
             Token::Lt => BinOp::Lt,
             Token::Gt => BinOp::Gt,
             Token::Le => BinOp::Le,
-            Token::Lt => BinOp::Lt,
-            Token::Eq => BinOp::Eq,
+            Token::Ge => BinOp::Ge,
             Token::Ne => BinOp::Ne,
         }
         .boxed(),
