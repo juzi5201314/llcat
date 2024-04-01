@@ -48,6 +48,9 @@ pub enum Token {
     #[token("ret", priority = 100)]
     KeywordRet,
 
+    #[token("import", priority = 100)]
+    KeywordImport,
+
     // punctuation symbol
     #[token("+")]
     Plus,
@@ -283,6 +286,7 @@ impl Display for Token {
             Token::KeywordElse => "else",
             Token::KeywordLoop => "loop",
             Token::KeywordBreak => "br",
+            Token::KeywordImport => "import" ,
             Token::Plus => "+",
             Token::Minus => "-",
             Token::Star => "*",

@@ -4,6 +4,7 @@
 use llcat_parser::ast;
 use llcat_parser::ast::BinOp;
 use llcat_parser::ast::Expr::*;
+use llcat_parser::ast::Item;
 use llcat_parser::ast::Literal::*;
 use llcat_parser::ast::Stmt::*;
 use llcat_parser::ast::UnOp;
@@ -49,7 +50,7 @@ macro_rules! assert_matches {
     ($src:expr, $ast:pat $(if $($if:tt)*)?) => {
         {
             let mut parser = Parser::new($src);
-            std::assert_matches::assert_matches!(parser.parse(), Ok(v) if matches!(&*v, $ast $(if $($if)*)?));
+            std::assert_matches::assert_matches!(parser.parse(), Ok(v) if matches!(&*v.items, $ast $(if $($if)*)?));
         }
     };
 }
@@ -59,7 +60,7 @@ fn fn_decl_test() {
     assert_matches!(
         "fn sum(a, b) { ret a + b; }",
         &[
-            ast::Decl::Fn { ref name, ref params, body: ast::Block { ref stmts }, ref retrun_ty }
+            Item::Decl(ast::Decl::Fn { ref name, ref params, body: ast::Block { ref stmts }, ref retrun_ty })
         ] if name == "sum"
             && params.as_slice() == &["a", "b"]
             && retrun_ty == &None

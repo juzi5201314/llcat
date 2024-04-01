@@ -18,6 +18,10 @@ use smol_str::SmolStr;
 use crate::ast::BinOp;
 use crate::ast::Block;
 use crate::ast::Decl;
+use crate::ast::Import;
+use crate::ast::Item;
+use crate::ast::Module;
+use crate::ast::Path;
 use crate::ast::Stmt;
 use crate::ast::UnOp;
 use crate::ast::{Expr, Literal};
@@ -69,7 +73,7 @@ impl<'s> Parser<'s> {
         self
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Decl>, Vec<Rich<'_, Token>>> {
+    pub fn parse(&mut self) -> Result<Module, Vec<Rich<'_, Token>>> {
         let tokens = lexer(&self.src);
         let result = parser()
             .parse_with_state(token_stream(tokens, self.src.len()), &mut self.ctx)
@@ -169,11 +173,40 @@ pub fn print_error<T>(src: &str, result: Result<T, Vec<Rich<Token>>>) -> Result<
     }
 }
 
-fn parser<'a, Input>() -> P!('a, Input, Vec<Decl>)
+fn parser<'a, Input>() -> P!('a, Input, Module)
 where
     Input: I<'a>,
 {
-    decl_parser().repeated().collect()
+    top_item_parser()
+        .repeated()
+        .collect::<Vec<_>>()
+        .map(|items| Module { items })
+}
+
+fn top_item_parser<'a, Input>() -> P!('a, Input, Item)
+where
+    Input: I<'a>,
+{
+    import_parser()
+        .map(Item::Import)
+        .or(decl_parser().map(Item::Decl))
+}
+
+fn import_parser<'a, Input>() -> P!('a, Input, Import)
+where
+    Input: I<'a>,
+{
+    let ident = ident_parser::<Input>();
+    let import = just(Token::KeywordImport)
+        .ignore_then(
+            ident
+                .clone()
+                .separated_by(just(Token::PathSep))
+                .collect::<ContainerWrapper<[_; 3]>>(),
+        )
+        .map_with(|path, _| Import::Direct(Path { path: path.0 }));
+
+    import
 }
 
 fn decl_parser<'a, Input>() -> P!('a, Input, Decl)
@@ -214,13 +247,13 @@ where
             // this func
             e.state().local(name.clone());
 
-            if let Some(Stmt::Expr(e)) = body.stmts.pop() {
-                if !matches!(&*e, Expr::Return(_)) {
+            match body.stmts.pop() {
+                Some(Stmt::Expr(e)) if !matches!(&*e, Expr::Return(_)) => {
                     body.stmts.push(Stmt::Expr(Box::new(Expr::Return(e))))
-                } else {
-                    body.stmts.push(Stmt::Expr(e));
                 }
-            };
+                Some(stmt) => body.stmts.push(stmt),
+                None => {}
+            }
 
             Decl::Fn {
                 name,
@@ -262,12 +295,13 @@ where
         });
 
     _let.or(assign)
-        .or(expr
-            .clone()
-            .then_ignore(just(Token::Semi))
-            .map(|expr| Stmt::SemiExpr(Box::new(expr))))
-        .or(expr.map(|expr| Stmt::Expr(Box::new(expr))))
-    //let expr = expr_parser();
+        .or(expr.then(just(Token::Semi).or_not()).map(|(expr, semi)| {
+            if semi.is_some() {
+                Stmt::SemiExpr(Box::new(expr))
+            } else {
+                Stmt::Expr(Box::new(expr))
+            }
+        }))
 }
 
 fn block_parser<'a, Input>(expr: P!('a, Input, Expr)) -> P!('a, Input, Block)
@@ -288,7 +322,6 @@ where
                         box Expr::Block(_)
                         | box Expr::If(_, _, _)
                         | box Expr::Loop(_)
-                        | box Expr::Return(_)
                         | box Expr::Break,
                     )
                 )
