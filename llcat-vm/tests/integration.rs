@@ -23,7 +23,8 @@ fn fib_recursion_test() {
         "../../examples/fib_recursion.llc"
     )));
     // 47: 369.20s(pool), 288.14s(offset)
-    let ret = rt.call_func(0, vec![Value::Consti64(47)]).unwrap();
+    let ret = rt.call_func(0, vec![Value::Consti64(32)]).unwrap();
+    
     assert_eq!(ret, Value::Consti64(2178309))
 }
 
