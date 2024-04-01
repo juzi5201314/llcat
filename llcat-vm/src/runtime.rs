@@ -1,4 +1,3 @@
-use std::mem::size_of;
 use std::rc::Rc;
 
 use llcat_bytecode::bytecode::{Instruction, Module};
@@ -219,8 +218,6 @@ impl Runtime {
         //ctx.local_table.clear();
         //self.ctx_pool.free(ctx);
 
-        dbg!(self.ctx.stack.raw.len() * size_of::<Value>());
-
         Ok(ret)
     }
 
@@ -234,12 +231,14 @@ impl Runtime {
             }
             Instruction::StoreLocal(id) => {
                 let value = self.ctx.stack.assert_pop();
-                if let Some(v) = self.ctx.local_table.get_mut(id as usize) {
-                    *v = value
-                } else if self.ctx.local_table.len() == id as usize {
-                    self.ctx.local_table.push(value);
-                } else {
-                    return Err(Error::LocalNotExist(id as usize));
+                loop {
+                    if let Some(v) = self.ctx.local_table.get_mut(id as usize) {
+                        *v = value;
+                        break;
+                    } else {
+                        self.ctx.local_table.resize(id as usize + 1, Value::Uninit);
+                        continue;
+                    }
                 }
             }
             Instruction::FuncCall(id) => {

@@ -141,9 +141,8 @@ impl ParserContext {
             return true;
         }
         self.scope
-            .last()
-            .expect("scope is empty")
-            .get(key)
+            .iter()
+            .find(|scope| scope.get(key).is_some())
             .is_some()
     }
 }
@@ -277,6 +276,10 @@ where
 {
     let stmt = stmt_parser::<Input>(expr.clone());
     stmt.clone()
+        .map_with(|o, e| {
+            e.state().enter();
+            o
+        })
         .filter(|stmt| {
             !matches!(stmt, Stmt::Expr(_))
                 || matches!(
@@ -297,7 +300,8 @@ where
             just(Token::OpenDelimiter(Delimiter::Brace)),
             just(Token::CloseDelimiter(Delimiter::Brace)),
         )
-        .map(|(stmts, ret)| {
+        .map_with(|(stmts, ret), e| {
+            e.state().exit();
             let mut stmts = stmts.0;
             if let Some(ret) = ret {
                 stmts.push(ret);

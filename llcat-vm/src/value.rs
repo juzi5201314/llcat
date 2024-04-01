@@ -1,10 +1,10 @@
 use std::mem::size_of;
 use std::ops::{Add, Sub};
 
-
 #[derive(Clone, Copy, Debug)]
 pub enum Value {
     Unit,
+    Uninit,
     Consti64(i64),
 }
 
@@ -13,6 +13,7 @@ impl Value {
         match self {
             Value::Unit => false,
             Value::Consti64(i) => *i == 1,
+            Value::Uninit => panic!("uninitialized value"),
         }
     }
 
@@ -28,17 +29,19 @@ impl Add for Value {
         match (self, rhs) {
             (Value::Consti64(l), Value::Consti64(r)) => Value::Consti64(l + r),
             (Value::Unit, val) | (val, Value::Unit) => val,
+            (Value::Uninit, _) | (_, Value::Uninit) => panic!("uninitialized value"),
         }
     }
 }
 
 impl Sub for Value {
     type Output = Value;
-    
+
     fn sub(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Value::Consti64(l), Value::Consti64(r)) => Value::Consti64(l - r),
             (Value::Unit, val) | (val, Value::Unit) => val,
+            (Value::Uninit, _) | (_, Value::Uninit) => panic!("uninitialized value"),
         }
     }
 }
@@ -50,6 +53,7 @@ impl PartialEq for Value {
             (Value::Unit, Value::Unit) => todo!(),
             (Value::Unit, Value::Consti64(r)) => todo!("{}", r),
             (Value::Consti64(_), Value::Unit) => todo!(),
+            (Value::Uninit, _) | (_, Value::Uninit) => panic!("uninitialized value"),
         }
     }
 }
@@ -61,10 +65,9 @@ impl PartialOrd for Value {
             (Value::Unit, Value::Unit) => todo!(),
             (Value::Unit, Value::Consti64(_)) => todo!(),
             (Value::Consti64(_), Value::Unit) => todo!(),
+            (Value::Uninit, _) | (_, Value::Uninit) => panic!("uninitialized value"),
         }
     }
 }
 
-const _: () = {
-    assert!(size_of::<Value>() == 16)
-};
+const _: () = assert!(size_of::<Value>() == 16);
