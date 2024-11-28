@@ -5,10 +5,21 @@ edition = "2021"
 
 [dependencies]
 ahash = { version = "0.8.11", features = ["compile-time-rng", "serde"] }
+allocator-api2 = { version = "0.2.20", features = [] }
+bumpalo = { version = "3.16.0", features = ["allocator-api2", "allocator_api"] }
 chumsky = { version = "1.0.0-alpha.7", features = ["pratt", "regex", "serde", "sync"] }
+hashbrown = { version = "0.15.2", features = ["serde", "rayon"] }
 lasso = { version = "0.7.3", features = ["serialize", "inline-more"] }
 logos = "0.14.2"
 pretty = { version = "0.12.3", features = ["termcolor"] }
+rand = { version = "0.9.0-beta.0", features = ["simd_support"] }
 smallvec = { version = "2.0.0-alpha.7", features = ["serde"] }
 smol_str = { version = "0.3.2", features = ["serde"] }
 thiserror = "2.0.3"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "string_interning"
+harness = false
