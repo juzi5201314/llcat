@@ -4,14 +4,13 @@ use logos::Logos;
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 
-use super::{Atom, Intern};
+use super::Atom;
 
 pub type Lexer<'a> = logos::Lexer<'a, Token>;
 
 #[derive(Logos, Debug, PartialEq)]
 #[logos(skip r"[ \t\n\f]+")]
 #[logos(error = LexError)]
-#[logos(extras = Intern)]
 pub enum Token {
     // literal
     #[regex(r"-?[_0-9]+", lex_i64, priority = 3)]
@@ -228,7 +227,7 @@ fn lex_string(lex: &mut Lexer) -> Result<Atom, LexError> {
             }
         }
 
-        Ok(lex.extras.intern(&s))
+        Ok(Atom::new(s.as_str()))
     })
 }
 
@@ -301,7 +300,7 @@ mod tests {
     use logos::Logos;
     use smol_str::SmolStr;
 
-    use crate::parser::{LexError, Token, Lexer};
+    use crate::parser::{Atom, LexError, Lexer, Token};
 
     macro_rules! assert_lex_eq {
         ($src:expr, |$id:ident| [$($tok:expr),+ $(,)?]) => {
@@ -363,15 +362,15 @@ mod tests {
         assert_lex_eq!(
             r#" """ "#,
             |lex| [
-                Ok(Token::String(lex.extras.intern(""))),
+                Ok(Token::String(Atom::new(""))),
                 Err(LexError::InvalidToken)
             ]
         );
         assert_lex_eq!(
             r#" "\"" "\n" "\q" "#,
             |lex| [
-                Ok(Token::String(lex.extras.intern("\""))),
-                Ok(Token::String(lex.extras.intern("\n"))),
+                Ok(Token::String(Atom::new("\""))),
+                Ok(Token::String(Atom::new("\n"))),
                 Err(LexError::InvalidEscapeChar('q'))
             ]
         );
@@ -382,7 +381,7 @@ mod tests {
         assert_lex_eq!(
             r#" "\u{10FFFF}" "\u{10FFFX}" "\u{10FFFFF}""#,
             |lex| [
-                Ok(Token::String(lex.extras.intern("\u{10FFFF}"))),
+                Ok(Token::String(Atom::new("\u{10FFFF}"))),
                 Err(LexError::InvalidUnicodeChar('X')),
                 Err(LexError::OverlongUnicodeEscape)
             ]
@@ -394,9 +393,9 @@ mod tests {
         assert_lex_eq!(
             r#" "foo" "0" "中文" "#,
             |lex| [
-                Ok(Token::String(lex.extras.intern("foo"))),
-                Ok(Token::String(lex.extras.intern("0"))),
-                Ok(Token::String(lex.extras.intern("中文")))
+                Ok(Token::String(Atom::new("foo"))),
+                Ok(Token::String(Atom::new("0"))),
+                Ok(Token::String(Atom::new("中文")))
             ]
         );
     }

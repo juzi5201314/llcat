@@ -1,5 +1,6 @@
 #![feature(str_from_raw_parts)]
 #![feature(allocator_api)]
+#![feature(min_specialization)]
 
 pub mod parser;
 pub mod arena;

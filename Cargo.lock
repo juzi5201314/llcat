@@ -410,6 +410,7 @@ dependencies = [
  "hashbrown 0.15.2",
  "lasso",
  "logos",
+ "once_cell",
  "pretty",
  "rand",
  "smallvec",

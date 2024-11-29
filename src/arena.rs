@@ -3,7 +3,7 @@ use std::{alloc::Allocator, ptr::NonNull, rc::Rc};
 use allocator_api2::alloc::Allocator as Allocator2;
 
 #[derive(Clone)]
-pub struct BumpArena(Rc<bumpalo::Bump>);
+pub struct BumpArena(pub Rc<bumpalo::Bump>);
 
 unsafe impl Allocator for BumpArena {
     fn allocate(
