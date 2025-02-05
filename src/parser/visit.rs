@@ -30,6 +30,7 @@ pub trait Visitor: Sized {
         un_op => un_op: UnOp;
         ident_expr => ident: Atom;
         return_expr => return_expr: Expr;
+        let_expr => let_expr: LetExpr;
     );
 }
 
@@ -46,7 +47,7 @@ pub fn walk_declaration<V: Visitor>(visitor: &mut V, declaration: &Declaration) 
 }
 
 pub fn walk_func_decl<V: Visitor>(visitor: &mut V, decl: &FuncDecl) {
-    visitor.visit_expr_block(&decl.body);
+    visitor.visit_expr(&decl.body);
 }
 
 pub fn walk_expr_block<V: Visitor>(visitor: &mut V, block: &ExprBlock) {
@@ -64,6 +65,7 @@ pub fn walk_expr<V: Visitor>(visitor: &mut V, expr: &Expr) {
         Expr::Return(expr) => visitor.visit_return_expr(expr),
         Expr::BlockExpr(expr_block) => visitor.visit_expr_block(expr_block),
         Expr::IfExpr(if_expr) => visitor.visit_if_expr(if_expr),
+        Expr::LetExpr(let_expr) => visitor.visit_let_expr(let_expr),
     }
 }
 
@@ -77,6 +79,10 @@ pub fn walk_if_expr<V: Visitor>(visitor: &mut V, if_expr: &IfExpr) {
 
 pub fn walk_return_expr<V: Visitor>(visitor: &mut V, expr: &Expr) {
     walk_expr(visitor, expr);
+}
+
+pub fn walk_let_expr<V: Visitor>(visitor: &mut V, let_expr: &LetExpr) {
+    walk_expr(visitor, &let_expr.value);
 }
 
 pub fn walk_literal<V: Visitor>(visitor: &mut V, literal: &Literal) {}

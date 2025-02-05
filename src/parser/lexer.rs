@@ -1,4 +1,4 @@
-use std::{cell::RefCell, str::FromStr};
+use std::cell::RefCell;
 
 use caches::Cache;
 use logos::Logos;
@@ -156,6 +156,7 @@ pub enum Token {
     Underscore,
     #[token(".")]
     Dot,
+    #[display(";")]
     #[token(";")]
     Semi,
     #[token(":")]
@@ -170,6 +171,7 @@ pub enum Token {
     Pound,
     #[token("$")]
     Dollar,
+    #[display("?")]
     #[token("?")]
     Question,
     #[token("~")]
@@ -187,7 +189,8 @@ pub enum Token {
     #[display("close_delimiter")]
     CloseDelimiter(Delimiter),
 
-    Error,
+    #[display("[error token]")]
+    Error(usize),
     //Error(LexError),
 }
 

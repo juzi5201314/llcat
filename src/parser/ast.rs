@@ -16,7 +16,7 @@ pub enum Declaration {
 pub struct FuncDecl {
     pub name: Atom,
     pub params: Vec<Atom>,
-    pub body: ExprBlock,
+    pub body: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,7 +32,14 @@ pub enum Expr {
     BinaryExpr(BinaryExpr),
     BlockExpr(ExprBlock),
     IfExpr(IfExpr),
+    LetExpr(LetExpr),
     Return(Box<Expr>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LetExpr {
+    pub name: Atom,
+    pub value: Box<Expr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,26 +109,28 @@ pub enum BinOp {
     Ge,
     /// `>`
     Gt,
+    /// `=`
+    Assign,
     /// `+=`
-    AddEq,
+    AddAssign,
     /// `-=`
-    SubEq,
+    SubAssign,
     /// `*=`
-    MulEq,
+    MulAssign,
     /// `/=`
-    DivEq,
+    DivAssign,
     /// `%=`
-    ModEq,
+    ModAssign,
     /// `&=`
-    BitAndEq,
+    BitAndAssign,
     /// `|=`
-    BitOrEq,
+    BitOrAssign,
     /// `^=`
-    BitXorEq,
+    BitXorAssign,
     /// `<<=`
-    ShlEq,
+    ShlAssign,
     /// `>>=`
-    ShrEq,
+    ShrAssign,
 }
 
 #[derive(Debug, Clone, PartialEq)]

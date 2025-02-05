@@ -72,6 +72,7 @@ impl ToPrettyDoc for Expr {
             Expr::Return(expr) => RcDoc::text("return ").append(expr.to_doc()),
             Expr::BlockExpr(expr_block) => expr_block.to_doc(),
             Expr::IfExpr(if_expr) => if_expr.to_doc(),
+            Expr::LetExpr(let_expr) => todo!(),
         }
     }
 }
@@ -138,16 +139,17 @@ impl ToPrettyDoc for BinOp {
             BinOp::Ne => "!=",
             BinOp::Ge => ">=",
             BinOp::Gt => ">",
-            BinOp::AddEq => "+=",
-            BinOp::SubEq => "-=",
-            BinOp::MulEq => "*=",
-            BinOp::DivEq => "/=",
-            BinOp::ModEq => "%=",
-            BinOp::BitAndEq => "&=",
-            BinOp::BitOrEq => "|=",
-            BinOp::BitXorEq => "^=",
-            BinOp::ShlEq => "<<=",
-            BinOp::ShrEq => ">>=",
+            BinOp::AddAssign => "+=",
+            BinOp::SubAssign => "-=",
+            BinOp::MulAssign => "*=",
+            BinOp::DivAssign => "/=",
+            BinOp::ModAssign => "%=",
+            BinOp::BitAndAssign => "&=",
+            BinOp::BitOrAssign => "|=",
+            BinOp::BitXorAssign => "^=",
+            BinOp::ShlAssign => "<<=",
+            BinOp::ShrAssign => ">>=",
+            BinOp::Assign => "==",
         })
     }
 }

@@ -3,8 +3,8 @@ use std::vec::IntoIter;
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{
     error::Rich,
-    input::{Input, SpannedInput, Stream, ValueInput},
-    pratt::{infix, left, prefix, right},
+    input::{Input, IterInput, MapExtra, MappedInput, Stream, ValueInput},
+    pratt::{infix, left, prefix, right, Operator},
     prelude::{just, recursive},
     select,
     span::SimpleSpan,
@@ -21,86 +21,13 @@ impl<T> TokenInput for T where T: ValueInput<'static, Token = Token, Span = Simp
 
 macro_rules! impl_parser {
     ($ret:ty) => {
-        impl Parser<'static, I, $ret, chumsky::extra::Full<Rich<'static, Token>, (), ()>> + Clone
+        impl Parser<'static, I, $ret, chumsky::extra::Full<Rich<'static, Token>, (), ()>> + Clone + 'static
     };
 }
 
 pub enum ParseResult<O> {
     Ok(O),
     Err(Vec<String>),
-}
-
-pub trait ParseFromSource<O> {
-    fn parse_src(&self, input: &str) -> ParseResult<O>;
-}
-
-impl<P, O> ParseFromSource<O> for P
-where
-    P: Parser<
-            'static,
-            SpannedInput<Token, SimpleSpan, Stream<IntoIter<(Token, SimpleSpan)>>>,
-            O,
-            chumsky::extra::Full<Rich<'static, Token>, (), ()>,
-        > + Clone,
-{
-    fn parse_src(&self, input: &str) -> ParseResult<O> {
-        use logos::Logos;
-
-        let mut errors = Vec::new();
-
-        let tokens = Token::lexer(input)
-            .spanned()
-            .map(|(result, span)| {
-                (
-                    match result {
-                        Ok(t) => t,
-                        Err(err) => {
-                            let mut msg = Vec::new();
-                            Report::build(ReportKind::Error, span.clone())
-                                .with_message("Lexical Error")
-                                .with_label(
-                                    Label::new(span.clone())
-                                        .with_message(err.to_string())
-                                        .with_color(Color::Red),
-                                )
-                                .finish()
-                                .write(Source::from(input), &mut msg)
-                                .unwrap();
-                            errors.push(String::from_utf8_lossy(&msg).to_string());
-                            Token::Error
-                        }
-                    },
-                    SimpleSpan::from(span),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let stream = Stream::from_iter(tokens)
-            .spanned::<Token, SimpleSpan>(SimpleSpan::from(input.len()..input.len()));
-        let res = self.parse(stream);
-
-        if res.has_errors() {
-            for err in res.errors() {
-                let mut msg = Vec::new();
-                Report::build(ReportKind::Error, err.span().into_range())
-                    .with_message(err.to_string())
-                    .with_label(
-                        Label::new(err.span().into_range())
-                            .with_message(err.reason())
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .write(Source::from(input), &mut msg)
-                    .unwrap();
-                errors.push(String::from_utf8_lossy(&msg).to_string());
-            }
-        }
-        if let Some(output) = res.into_output() {
-            ParseResult::Ok(output)
-        } else {
-            ParseResult::Err(errors)
-        }
-    }
 }
 
 impl<O> ParseResult<O> {
@@ -112,6 +39,91 @@ impl<O> ParseResult<O> {
                     eprintln!("{}\n", s);
                 }
                 panic!("parsing failed")
+            }
+        }
+    }
+}
+
+pub trait ParserHelper<O> {
+    fn f() -> fn((Token, SimpleSpan)) -> (Token, SimpleSpan);
+    fn parse_from_str(&self, file: &str, src: &str) -> ParseResult<O>;
+}
+
+impl<'src, P, O> ParserHelper<O> for P
+where
+    P: Parser<
+            'static,
+            MappedInput<
+                Token,
+                SimpleSpan,
+                Stream<std::vec::IntoIter<(Token, SimpleSpan)>>,
+                fn((Token, SimpleSpan)) -> (Token, SimpleSpan),
+            >,
+            O,
+            chumsky::extra::Full<Rich<'static, Token>, (), ()>,
+        > + Clone,
+{
+    fn f() -> fn((Token, SimpleSpan)) -> (Token, SimpleSpan) {
+        std::convert::identity
+    }
+
+    fn parse_from_str(&self, src_id: &str, src: &str) -> ParseResult<O> {
+        use logos::Logos;
+
+        let mut errors = Vec::new();
+        let mut lexer_errors = Vec::new();
+
+        let tokens = Token::lexer(src)
+            .spanned()
+            .map(|(result, span)| {
+                (
+                    match result {
+                        Ok(t) => t,
+                        Err(err) => {
+                            lexer_errors.push(err.to_string());
+                            Token::Error(lexer_errors.len() - 1)
+                        }
+                    },
+                    SimpleSpan::from(span),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let stream = Stream::from_iter(tokens).map((0..src.len()).into(), Self::f());
+        let res = self.parse(stream);
+
+        match res.into_result() {
+            Ok(o) => ParseResult::Ok(o),
+            Err(errs) => {
+                for err in errs {
+                    let mut msg = Vec::new();
+                    let tagged_span = (src_id, err.span().into_range());
+
+                    let mut report = Report::build(ReportKind::Error, tagged_span.clone())
+                        .with_message(err.to_string())
+                        .with_label(
+                            Label::new(tagged_span.clone())
+                                .with_message(err.reason())
+                                .with_color(Color::Red),
+                        );
+
+                    if let Some(Token::Error(idx)) = err.found() {
+                        let lexer_err = &lexer_errors[*idx];
+                        report = report.with_label(
+                            Label::new(tagged_span)
+                                .with_message(lexer_err.to_string())
+                                .with_color(Color::Red)
+                                .with_order(-5),
+                        );
+                    }
+
+                    report
+                        .finish()
+                        .write((src_id, Source::from(src)), &mut msg)
+                        .unwrap();
+                    errors.push(String::from_utf8_lossy(&msg).to_string());
+                }
+                ParseResult::Err(errors)
             }
         }
     }
@@ -149,11 +161,18 @@ where
             just(Token::OpenDelimiter(Delimiter::Parenthesis)),
             just(Token::CloseDelimiter(Delimiter::Parenthesis)),
         );
-    let body = block_parser(expr_parser());
+
+    let block = block_parser(expr_parser());
+    let inline = expr_parser();
+    let body = block
+        .then_ignore(just(Token::Semi).or_not())
+        .map(|block| Expr::BlockExpr(block))
+        .or(inline.then_ignore(just(Token::Semi)));
 
     just(Token::Fn)
         .ignore_then(name)
         .then(params)
+        .then_ignore(just(Token::Eq))
         .then(body)
         .map(|((name, params), body)| FuncDecl { name, params, body })
 }
@@ -195,18 +214,20 @@ where
             just(Token::OpenDelimiter(Delimiter::Parenthesis)),
             just(Token::CloseDelimiter(Delimiter::Parenthesis)),
         );
-        let ret_expr = just(Token::Return)
-            .ignore_then(expr.clone())
-            .map(Box::new)
-            .map(Expr::Return)
-            .labelled("return expr");
+        /* let ret_expr = just(Token::Return)
+        .ignore_then(expr.clone())
+        .map(Box::new)
+        .map(Expr::Return)
+        .labelled("return expr"); */
         let if_expr = if_expr_parser(expr.clone()).map(Expr::IfExpr);
         let block_expr = block_parser(expr.clone()).map(Expr::BlockExpr);
+        let let_expr = let_expr_parser(expr.clone()).map(Expr::LetExpr);
 
         let atom = ident
             .or(literal)
             .or(bracket_expr)
-            .or(ret_expr)
+            //.or(ret_expr)
+            .or(let_expr)
             .or(if_expr)
             .or(block_expr);
 
@@ -216,22 +237,19 @@ where
     })
 }
 
-pub fn ternary_expr_parser<I>(expr_parser: impl_parser!(Expr)) -> impl_parser!(IfExpr)
+pub fn let_expr_parser<I>(expr_parser: impl_parser!(Expr)) -> impl_parser!(LetExpr)
 where
     I: TokenInput,
 {
-    let short_if = expr_parser
-        .clone()
-        .then_ignore(just(Token::Question))
-        .then(expr_parser.clone())
-        .then_ignore(just(Token::Colon))
-        .then(expr_parser.clone())
-        .map(|((cond, then), el)| IfExpr {
-            cond: Box::new(cond),
-            then_expr: Box::new(then),
-            else_expr: Some(Box::new(el)),
-        });
-    short_if
+    just(Token::Let)
+        .ignore_then(ident_parser())
+        .then_ignore(just(Token::Eq))
+        .then(expr_parser)
+        .then_ignore(just(Token::Semi))
+        .map(|(name, expr)| LetExpr {
+            name,
+            value: Box::new(expr),
+        })
 }
 
 pub fn if_expr_parser<I>(expr_parser: impl_parser!(Expr)) -> impl_parser!(IfExpr)
@@ -240,7 +258,7 @@ where
 {
     // if cond {...}
     // if cond {...} else {...}
-    let full = just(Token::If)
+    just(Token::If)
         .ignore_then(expr_parser.clone())
         .then(block_parser(expr_parser.clone()))
         .then(
@@ -252,21 +270,7 @@ where
             cond: Box::new(cond),
             then_expr: Box::new(Expr::BlockExpr(then)),
             else_expr: el.map(|e| Box::new(Expr::BlockExpr(e))),
-        });
-
-    let short_if = expr_parser
-        .clone()
-        .then_ignore(just(Token::Question))
-        .then(expr_parser.clone())
-        .then_ignore(just(Token::Colon))
-        .then(expr_parser.clone())
-        .map(|((cond, then), el)| IfExpr {
-            cond: Box::new(cond),
-            then_expr: Box::new(then),
-            else_expr: Some(Box::new(el)),
-        });
-
-    full //.or(short_if)
+        })
 }
 
 pub fn pratt_parser<I>(
@@ -276,63 +280,105 @@ pub fn pratt_parser<I>(
 where
     I: TokenInput,
 {
-    fn to_binary_expr(l: Expr, op: BinOp, r: Expr) -> Expr {
+    /* fn to_binary_expr<I>(l: Expr, op: BinOp, r: Expr, _: &mut MapExtra<'static, 'static, I, ParserExtra>) -> Expr where I: TokenInput {
         Expr::BinaryExpr(BinaryExpr {
             left: Box::new(l),
             op,
             right: Box::new(r),
         })
     }
-    fn to_unary_expr(op: UnOp, r: Expr) -> Expr {
+    fn to_unary_expr<I>(op: UnOp, r: Expr, _: &mut MapExtra<'static, 'static, I, ParserExtra>) -> Expr where I: TokenInput {
         Expr::UnaryExpr(UnaryExpr {
             op,
             expr: Box::new(r),
         })
+    } */
+
+    macro_rules! to_binary_expr {
+        () => {
+            |l, op, r, _| {
+                Expr::BinaryExpr(BinaryExpr {
+                    left: Box::new(l),
+                    op,
+                    right: Box::new(r),
+                })
+            }
+        };
     }
 
-    macro_rules! just_map {
-        ($just:expr => $map_to:expr) => {
-            just($just).map(|_| $map_to).boxed()
+    macro_rules! to_unary_expr {
+        () => {
+            |op, r, _| {
+                Expr::UnaryExpr(UnaryExpr {
+                    op,
+                    expr: Box::new(r),
+                })
+            }
         };
     }
 
     atom.pratt((
         // @unary -, !
-        prefix(12, just_map!(Token::Minus => UnOp::Neg), to_unary_expr),
-        prefix(12, just_map!(Token::Not => UnOp::Not), to_unary_expr),
-        // *, /, %
+        prefix(
+            13,
+            select! {
+                Token::Minus => UnOp::Neg,
+                Token::Not => UnOp::Not,
+            },
+            to_unary_expr!(),
+        ),
+        // `*, /, %`
         infix(
             left(11),
-            just_map!(Token::Star => BinOp::Mul),
-            to_binary_expr,
+            select! {
+                Token::Star => BinOp::Mul,
+                Token::Slash => BinOp::Div,
+                Token::Percent => BinOp::Mod,
+            },
+            to_binary_expr!(),
         ),
-        infix(
-            left(11),
-            just_map!(Token::Slash => BinOp::Div),
-            to_binary_expr,
-        ),
-        infix(
-            left(11),
-            just_map!(Token::Percent => BinOp::Mod),
-            to_binary_expr,
-        ),
-        // +, -
+        // `+, -`
         infix(
             left(10),
-            just_map!(Token::Plus => BinOp::Add),
-            to_binary_expr,
+            select! {
+                Token::Plus => BinOp::Add,
+                Token::Minus => BinOp::Sub,
+            },
+            to_binary_expr!(),
         ),
+        // `== != < > <= >=`
         infix(
-            left(10),
-            just_map!(Token::Minus => BinOp::Sub),
-            to_binary_expr,
+            left(5),
+            select! {
+                Token::EqEq => BinOp::Eq,
+                Token::Ne => BinOp::Ne,
+                Token::Lt => BinOp::Lt,
+                Token::Gt => BinOp::Gt,
+                Token::Le => BinOp::Le,
+                Token::Ge => BinOp::Ge,
+            },
+            to_binary_expr!(),
         ),
+        // <expr> && <expr>
         infix(
-            right(0),
+            left(4),
+            select! { Token::AndAnd => BinOp::And },
+            to_binary_expr!(),
+        ),
+        // <expr> || <expr>
+        infix(
+            left(3),
+            select! { Token::OrOr => BinOp::Or },
+            to_binary_expr!(),
+        ),
+        // ternary expr
+        // cond ? then : else
+        infix(
+            right(2),
             just(Token::Question)
                 .ignore_then(expr_parser)
                 .then_ignore(just(Token::Colon)),
-            |(cond, then, el)| {
+            |cond, then, el, _| {
                 Expr::IfExpr(IfExpr {
                     cond: Box::new(cond),
                     then_expr: Box::new(then),
@@ -340,7 +386,25 @@ where
                 })
             },
         ),
+        // `=, +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=, **=`
+        infix(
+            right(1),
+            select! {
+                Token::Eq => BinOp::Assign,
+                Token::PlusEq => BinOp::AddAssign,
+                Token::MinusEq => BinOp::SubAssign,
+                Token::StarEq => BinOp::MulAssign,
+                Token::SlashEq => BinOp::DivAssign,
+                Token::PercentEq => BinOp::ModAssign,
+            },
+            to_binary_expr!(),
+        ),
+        // return expr
+        prefix(0, just(Token::Return).labelled("return"), |_, expr, _| {
+            Expr::Return(Box::new(expr))
+        }),
     ))
+    //.pratt((a,))
 }
 
 pub fn literal_parser<I>() -> impl_parser!(Literal)
@@ -422,7 +486,7 @@ mod tests {
     pub fn exprs() {
         let parser = expr_parser();
 
-        let ident = parser.parse_src("foo").unwrap();
+        let ident = parser.parse_from_str("[test]", "foo").unwrap();
         assert!(matches!(ident, Expr::Ident(s) if &s == "foo"));
     }
 
@@ -430,7 +494,7 @@ mod tests {
     pub fn pratt_exprs() {
         let parser = expr_parser();
 
-        let literal = parser.parse_src("-(1+2)*3.2").unwrap();
+        let literal = parser.parse_from_str("[test]", "-(1+2)*3.2").unwrap();
         assert!(matches!(
             literal,
             expr!(@bin
@@ -445,38 +509,77 @@ mod tests {
     pub fn func_decl() {
         let parser = func_decl_parser();
 
-        let func_decl = parser.parse_src("fn add(a, b) { a + b }").unwrap();
+        let func_decl = parser
+            .parse_from_str("[test]", "fn add(a, b) = { a + b }")
+            .unwrap();
         assert!(matches!(func_decl, FuncDecl {
             name,
             params,
-            body: ExprBlock { exprs }
+            body: Expr::BlockExpr(ExprBlock { exprs })
         } if &name == "add" && params == vec!["a", "b"] && matches!(&*exprs, [
             expr!(@bin Expr::Ident(a), BinOp::Add, Expr::Ident(b))
         ] if a == "a" && b == "b")));
+
+        let func_decl_inline = parser
+            .parse_from_str("[test]", "fn add(a, b) = a + b;")
+            .unwrap();
+        assert!(matches!(func_decl_inline, FuncDecl {
+            name,
+            params,
+            body: expr!(@bin Expr::Ident(a), BinOp::Add, Expr::Ident(b))
+        } if &name == "add" && params == vec!["a", "b"] && a == "a" && b == "b"));
     }
 
     #[test]
     pub fn if_expr() {
         let parser = expr_parser();
 
-        let if_expr = parser.parse_src("if a { b } else { c }").unwrap();
+        let if_expr = parser
+            .parse_from_str("[test]", "if a { b } else { c }")
+            .unwrap();
         assert!(matches!(if_expr, Expr::IfExpr(IfExpr {
             cond: box expr!(@id a),
             then_expr: box Expr::BlockExpr(ExprBlock { exprs: then }),
             else_expr: Some(box Expr::BlockExpr(ExprBlock { exprs: _else }))
         }) if a == "a" && matches!(&*then, &[expr!(@id b)] if b == "b") && matches!(&*_else, &[expr!(@id c)] if c == "c")));
-        let short_if_expr = parser.parse_src("a ? b : c").unwrap();
+
+        let short_if_expr = parser.parse_from_str("[test]", "a + 1 ? b : c").unwrap();
         assert!(matches!(short_if_expr, Expr::IfExpr(IfExpr {
-                   cond: box expr!(@id a),
+                   cond: box expr!(@bin expr!(@id a), BinOp::Add, expr!(@int 1)),
                    then_expr: box expr!(@id b),
                    else_expr: Some(box expr!(@id c))
                }) if a == "a" && b == "b" && c == "c"));
 
-        let short_if_expr = parser.parse_src("a ? { b } : c").unwrap();
+        let short_if_expr = parser
+            .parse_from_str("[test]", "{ a } ? { b } : c")
+            .unwrap();
         assert!(matches!(short_if_expr, Expr::IfExpr(IfExpr {
                    cond: box Expr::BlockExpr(ExprBlock { exprs: cond }),
                    then_expr: box Expr::BlockExpr(ExprBlock { exprs: then }),
                    else_expr: Some(box expr!(@id c))
                }) if c == "c" && matches!(&*then, &[expr!(@id b)] if b == "b") && matches!(&*cond, &[expr!(@id a)] if a == "a")));
+    }
+
+    #[test]
+    pub fn return_expr() {
+        let parser = expr_parser();
+        let ret = parser.parse_from_str("[test]", "ret 1 + 2").unwrap();
+        assert!(matches!(
+            ret,
+            expr!(@ret expr!(@bin expr!(@int 1), BinOp::Add, expr!(@int 2)))
+        ));
+    }
+
+    #[test]
+    pub fn priority() {
+        let parser = expr_parser();
+
+        let if_expr = parser
+            .parse_from_str("[test]", "if a { b } else { c } + 1")
+            .unwrap();
+        let let_expr = parser
+            .parse_from_str("[test]", "let x = 1 + 1")
+            .unwrap();
+        println!("{:?}", let_expr);
     }
 }

@@ -1,6 +1,6 @@
 use hashbrown::{HashMap, HashSet};
 
-use crate::parser::{ast::*, parser, walk_bin_op, walk_expr, walk_program, ParseFromSource};
+use crate::parser::{ast::*, parser, walk_bin_op, walk_expr, walk_program, ParserHelper};
 use crate::parser::{Atom, Visitor};
 use crate::vm::bytecode;
 
@@ -61,7 +61,7 @@ impl Compiler {
 
     fn compile_src(&mut self, src: &str) -> bytecode::Module {
         let parser = parser();
-        let program = parser.parse_src(src).unwrap();
+        let program = parser.parse_from_str("[test]", src).unwrap();
         self.visit_program(&program);
         bytecode::Module {
             functions: self.funcs.clone(),
@@ -85,9 +85,7 @@ impl Visitor for Compiler {
             self.define_local(*param);
         }
 
-        for expr in &decl.body.exprs {
-            self.visit_expr(expr);
-        }
+        self.visit_expr(&decl.body);
 
         self.exit_scope();
     }
@@ -120,16 +118,17 @@ impl Visitor for Compiler {
             BinOp::Ne => todo!(),
             BinOp::Ge => todo!(),
             BinOp::Gt => todo!(),
-            BinOp::AddEq => todo!(),
-            BinOp::SubEq => todo!(),
-            BinOp::MulEq => todo!(),
-            BinOp::DivEq => todo!(),
-            BinOp::ModEq => todo!(),
-            BinOp::BitAndEq => todo!(),
-            BinOp::BitOrEq => todo!(),
-            BinOp::BitXorEq => todo!(),
-            BinOp::ShlEq => todo!(),
-            BinOp::ShrEq => todo!(),
+            BinOp::AddAssign => todo!(),
+            BinOp::SubAssign => todo!(),
+            BinOp::MulAssign => todo!(),
+            BinOp::DivAssign => todo!(),
+            BinOp::ModAssign => todo!(),
+            BinOp::BitAndAssign => todo!(),
+            BinOp::BitOrAssign => todo!(),
+            BinOp::BitXorAssign => todo!(),
+            BinOp::ShlAssign => todo!(),
+            BinOp::ShrAssign => todo!(),
+            BinOp::Assign => todo!(),
         }
     }
 
@@ -219,7 +218,7 @@ mod tests {
 
     #[test]
     fn compile_func() {
-        let src = r#"fn sum(a, b) { ret a + b }"#;
+        let src = r#"fn sum(a, b) = { ret a + b }"#;
         let mut compiler = Compiler::default();
         let module = compiler.compile_src(src);
         println!("{}", module.to_pretty(50));
