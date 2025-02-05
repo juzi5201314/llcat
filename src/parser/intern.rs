@@ -1,10 +1,10 @@
 //! A thread-local, immutable, inline(23 byte), fast-allocated, fast-cloned string interning.
-//! 
+//!
 //! * Allocate in a linear memory (arena)
 //! * Not deallocate
 
 use std::{
-    borrow::Cow,
+    borrow::{Borrow, Cow},
     cell::RefCell,
     fmt::{Debug, Display},
     hash::Hash,
@@ -194,6 +194,32 @@ impl AsRef<str> for Atom {
 impl PartialEq for Atom {
     fn eq(&self, other: &Self) -> bool {
         self.as_ref() == other.as_ref()
+    }
+}
+
+impl PartialEq<str> for Atom {
+    fn eq(&self, other: &str) -> bool {
+        self.as_ref() == other
+    }
+}
+
+impl PartialEq<&str> for Atom {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_ref() == *other
+    }
+}
+
+impl Eq for Atom {}
+
+impl Hash for Atom {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_ref().hash(state);
+    }
+}
+
+impl Borrow<str> for Atom {
+    fn borrow(&self) -> &str {
+        self
     }
 }
 

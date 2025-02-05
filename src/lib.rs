@@ -1,8 +1,8 @@
-#![feature(str_from_raw_parts)]
 #![feature(allocator_api)]
-#![feature(min_specialization)]
+#![feature(box_patterns)]
 
 pub mod parser;
+pub mod vm;
 pub mod arena;
 
 #[macro_export]

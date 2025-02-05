@@ -1,6 +1,6 @@
 use pretty::{Doc, RcDoc};
 
-use super::{BinOp, Expr, Literal, Program, UnOp};
+use super::ast::*;
 
 pub trait ToPrettyDoc {
     fn to_doc(&self) -> RcDoc<()>;
@@ -23,7 +23,42 @@ where
 
 impl ToPrettyDoc for Program {
     fn to_doc(&self) -> RcDoc<()> {
-        RcDoc::intersperse(self.exprs.iter().map(|e| e.to_doc()), Doc::line())
+        RcDoc::intersperse(
+            self.decls.iter().map(|d| d.to_doc()),
+            RcDoc::line().append(RcDoc::line()),
+        )
+    }
+}
+
+impl ToPrettyDoc for Declaration {
+    fn to_doc(&self) -> RcDoc<()> {
+        match self {
+            Declaration::Func(func_decl) => func_decl.to_doc(),
+        }
+    }
+}
+
+impl ToPrettyDoc for FuncDecl {
+    fn to_doc(&self) -> RcDoc<()> {
+        RcDoc::text("fn ")
+            .append(RcDoc::as_string(&self.name))
+            .append("(")
+            .append(RcDoc::intersperse(self.params.iter().map(RcDoc::as_string), ", ").group())
+            .append(")")
+            .append(self.body.to_doc())
+    }
+}
+
+impl ToPrettyDoc for ExprBlock {
+    fn to_doc(&self) -> RcDoc<()> {
+        RcDoc::text("{")
+            .append(RcDoc::line())
+            .append(RcDoc::intersperse(
+                self.exprs.iter().map(|e| e.to_doc()),
+                Doc::line(),
+            ))
+            .nest(1)
+            .append("}")
     }
 }
 
@@ -31,17 +66,52 @@ impl ToPrettyDoc for Expr {
     fn to_doc(&self) -> RcDoc<()> {
         match self {
             Expr::Literal(literal) => literal.to_doc(),
+            Expr::UnaryExpr(unary_expr) => unary_expr.to_doc(),
+            Expr::BinaryExpr(binary_expr) => binary_expr.to_doc(),
+            Expr::Ident(atom) => RcDoc::as_string(atom),
+            Expr::Return(expr) => RcDoc::text("return ").append(expr.to_doc()),
+            Expr::BlockExpr(expr_block) => expr_block.to_doc(),
+            Expr::IfExpr(if_expr) => if_expr.to_doc(),
         }
+    }
+}
+
+impl ToPrettyDoc for IfExpr {
+    fn to_doc(&self) -> RcDoc<()> {
+        RcDoc::text("if ")
+            .append(self.cond.to_doc())
+            .append(RcDoc::line())
+            .append(self.then_expr.to_doc())
+            .append(if let Some(el) = &self.else_expr {
+                RcDoc::text(" else ").append(el.to_doc())
+            } else {
+                RcDoc::nil()
+            })
+    }
+}
+
+impl ToPrettyDoc for UnaryExpr {
+    fn to_doc(&self) -> RcDoc<()> {
+        self.op.to_doc().append(self.expr.to_doc())
+    }
+}
+
+impl ToPrettyDoc for BinaryExpr {
+    fn to_doc(&self) -> RcDoc<()> {
+        RcDoc::intersperse(
+            [self.left.to_doc(), self.op.to_doc(), self.right.to_doc()],
+            RcDoc::space(),
+        )
     }
 }
 
 impl ToPrettyDoc for Literal {
     fn to_doc(&self) -> RcDoc<()> {
         match self {
-            Literal::Integer(i) => RcDoc::as_string(i),
-            Literal::Float(f) => RcDoc::as_string(f),
+            Literal::Float(n) => RcDoc::as_string(n),
             Literal::String(s) => RcDoc::as_string(s),
             Literal::Boolean(b) => RcDoc::as_string(b),
+            Literal::Integer(i) => RcDoc::as_string(i),
             Literal::Nil => RcDoc::text("nil"),
         }
     }

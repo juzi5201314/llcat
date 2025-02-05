@@ -1,38 +1,75 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, str::FromStr};
 
+use caches::Cache;
 use logos::Logos;
+use rust_decimal::Decimal;
 use smallvec::SmallVec;
-use smol_str::SmolStr;
 
 use super::Atom;
 
 pub type Lexer<'a> = logos::Lexer<'a, Token>;
 
-#[derive(Logos, Debug, PartialEq)]
+pub struct Caches<'s> {
+    s: caches::AdaptiveCache<
+        &'s str,
+        Atom,
+        hashbrown::DefaultHashBuilder,
+        hashbrown::DefaultHashBuilder,
+        hashbrown::DefaultHashBuilder,
+        hashbrown::DefaultHashBuilder,
+    >,
+}
+
+impl<'s> Default for Caches<'s> {
+    fn default() -> Self {
+        let hasher = hashbrown::DefaultHashBuilder::default();
+        Caches {
+            s: caches::AdaptiveCache::<&'s str, Atom>::builder(1024)
+                .set_recent_hasher(hasher.clone())
+                .set_frequent_hasher(hasher.clone())
+                .set_frequent_evict_hasher(hasher.clone())
+                .set_recent_evict_hasher(hasher.clone())
+                .finalize()
+                .unwrap(),
+        }
+    }
+}
+
+#[derive(Logos, Debug, PartialEq, Clone, Copy, amplify_derive::Display)]
 #[logos(skip r"[ \t\n\f]+")]
 #[logos(error = LexError)]
+#[logos(extras = (Caches<'s>,))]
+#[display(lowercase)]
 pub enum Token {
     // literal
-    #[regex(r"-?[_0-9]+", lex_i64, priority = 3)]
-    #[regex(r"-?0b[_0-1]+", lex_i64)]
-    #[regex(r"-?0o[_0-7]+", lex_i64)]
-    #[regex(r"-?0x[_0-9a-f]+", lex_i64)]
+    #[regex(
+        r"-?(?:0|[1-9]\d*)(?:\.\d+)(?:[eE][+-]?\d+)?",
+        lex_float_num,
+        priority = 80
+    )]
+    #[display("{0}")]
+    Float(Decimal),
+    #[regex(r"-?[0-9][_0-9]*", lex_num)]
+    #[regex(r"-?0b[_0-1]+", lex_num)]
+    #[regex(r"-?0o[_0-7]+", lex_num)]
+    #[regex(r"-?0x[_0-9a-f]+", lex_num)]
     Integer(i64),
-    #[regex(r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?", |lex| lex.slice().parse::<f64>().unwrap())]
-    Float(f64),
     //#[regex(r#""([^"\\]|\\["\\0abnfrt]|\\u\{[a-fA-F0-9]{6}\})*""#, lex_string)]
     #[regex(r#""([^"\\]|\\\S)*""#, lex_string)]
+    #[display("{0}")]
     String(Atom),
     #[token("false", |_| false, priority = 100)]
     #[token("true", |_| true, priority = 100)]
+    #[display("{0}")]
     Boolean(bool),
 
     #[token("nil")]
     Nil,
 
-    // #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| SmolStr::from(lex.slice()), priority = 4)]
-    #[regex(r"[^[:punct:]0-9\s]([^[:punct:]\s]|_)*", |lex| SmolStr::from(lex.slice()), priority = 3)]
-    Ident(SmolStr),
+    // #[regex("[a-zA-Z_][a-zA-Z0-9_]*", |lex| Atom::from(lex.slice()), priority = 4)]
+    #[regex(r"[^[:punct:]0-9\s]([^[:punct:]\s]|_)*", |lex| Atom::from(lex.slice()), priority = 3)]
+    #[display("{0}")]
+    Ident(Atom),
 
     // keyword
     #[token("else")]
@@ -144,18 +181,23 @@ pub enum Token {
 
     // delimiter
     #[regex(r"\(|\{|\[", lex_delimiter)]
+    #[display("open_delimiter")]
     OpenDelimiter(Delimiter),
     #[regex(r"\)|\}|\]", lex_delimiter)]
+    #[display("close_delimiter")]
     CloseDelimiter(Delimiter),
+
+    Error,
+    //Error(LexError),
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Delimiter {
-    // ()
+    /// ()
     Parenthesis,
-    // {}
+    /// {}
     Brace,
-    // []
+    /// []
     Bracket,
 }
 
@@ -170,8 +212,13 @@ fn lex_delimiter(lex: &mut Lexer) -> Option<Delimiter> {
 
 fn lex_string(lex: &mut Lexer) -> Result<Atom, LexError> {
     thread_local! {
+        // cache buffer, it can avoid a lot of heap allocation performance consumption
         static STRING_BUFFER: RefCell<String> = RefCell::new(String::with_capacity(24));
     }
+
+    if let Some(atom) = lex.extras.0.s.get(&lex.slice()) {
+        return Ok(*atom);
+    };
 
     let chars = lex.slice()[1..lex.slice().len() - 1].chars();
     let mut escape = false;
@@ -227,53 +274,73 @@ fn lex_string(lex: &mut Lexer) -> Result<Atom, LexError> {
             }
         }
 
-        Ok(Atom::new(s.as_str()))
+        let atom = Atom::new(s.as_str());
+
+        lex.extras.0.s.put(lex.slice(), atom);
+        Ok(atom)
     })
 }
 
-fn lex_i64(lex: &mut Lexer) -> Result<i64, LexError> {
+fn lex_float_num(lex: &mut Lexer) -> Result<Decimal, LexError> {
+    (if lex.slice().contains('e') || lex.slice().contains('E') {
+        Decimal::from_scientific
+    } else {
+        Decimal::from_str_exact
+    })(lex.slice())
+    .map_err(Into::<LexError>::into)
+}
+
+fn lex_num(lex: &mut Lexer) -> Result<i64, LexError> {
+    thread_local! {
+        static BUFFER: RefCell<SmallVec::<u8, 8>> = RefCell::new(SmallVec::<_, 8>::new());
+    }
+
     let s = lex.slice();
-    let bytes = {
-        // copy from String::replace
-        let mut result = SmallVec::<_, 8>::with_capacity(s.len());
-        let mut last_end = 0;
-        for (start, part) in s.match_indices('_') {
-            result.extend_from_slice(unsafe { s.get_unchecked(last_end..start) }.as_bytes());
-            last_end = start + part.len();
-        }
-        result.extend_from_slice(unsafe { s.get_unchecked(last_end..s.len()) }.as_bytes());
-        result
-    };
-    let s = unsafe { std::str::from_utf8_unchecked(&bytes) };
 
-    let (neg, s) = if &s[..1] == "-" {
-        (true, &s[1..])
-    } else {
-        (false, s)
-    };
+    BUFFER.with_borrow_mut(|buffer| {
+        buffer.clear();
+        let bytes = {
+            // copy from String::replace
+            // delete `_`
+            let mut last_end = 0;
+            for (start, part) in s.match_indices('_') {
+                buffer.extend_from_slice(unsafe { s.get_unchecked(last_end..start) }.as_bytes());
+                last_end = start + part.len();
+            }
+            buffer.extend_from_slice(unsafe { s.get_unchecked(last_end..s.len()) }.as_bytes());
+            buffer
+        };
+        let s = unsafe { std::str::from_utf8_unchecked(&bytes) };
 
-    let (base, num) = if neg {
-        (s.get(1..3), s.get(3..))
-    } else {
-        (s.get(..2), s.get(2..))
-    };
+        let (neg, s) = if &s[..1] == "-" {
+            (true, &s[1..])
+        } else {
+            (false, s)
+        };
 
-    let radix = match base {
-        Some("0b") => 2,
-        Some("0o") => 8,
-        Some("0x") => 16,
-        _ => 10,
-    };
+        let (base, num) = if neg {
+            (s.get(1..3), s.get(3..))
+        } else {
+            (s.get(..2), s.get(2..))
+        };
 
-    let src = if radix == 10 {
-        s
-    } else {
-        num.expect("the lexer regex ensures that there must be something here")
-    };
+        let radix = match base {
+            Some("0b") => 2,
+            Some("0o") => 8,
+            Some("0x") => 16,
+            _ => 10,
+        };
 
-    i64::from_str_radix(src, radix)
-        .map(|i| if neg { -i } else { i })
-        .map_err(Into::into)
+        let src = if radix == 10 {
+            s
+        } else {
+            num.expect("the lexer regex ensures that there must be something here")
+        };
+
+        i64::from_str_radix(src, radix)
+            .map(|i| if neg { -i } else { i })
+            .map_err(Into::into)
+    })
 }
 
 #[derive(thiserror::Error, Default, Debug, Clone, PartialEq)]
@@ -292,13 +359,16 @@ pub enum LexError {
 
     #[error("parse int error: {0}")]
     ParseIntegerError(#[from] std::num::ParseIntError),
+
+    #[error("parse decimal error: {0}")]
+    ParseDecimalError(#[from] rust_decimal::Error),
 }
 
 #[allow(unused_variables)]
 #[cfg(test)]
 mod tests {
     use logos::Logos;
-    use smol_str::SmolStr;
+    use rust_decimal_macros::dec;
 
     use crate::parser::{Atom, LexError, Lexer, Token};
 
@@ -325,78 +395,65 @@ mod tests {
 
     #[test]
     fn lex_ident() {
-        assert_lex_eq!("a", [Ok(Token::Ident(SmolStr::from("a")))]);
-        assert_lex_eq!("a_bc", [Ok(Token::Ident(SmolStr::from("a_bc")))]);
-        assert_lex_eq!("abc123", [Ok(Token::Ident(SmolStr::from("abc123")))]);
+        assert_lex_eq!("a", [Ok(Token::Ident(Atom::from("a")))]);
+        assert_lex_eq!("a_bc", [Ok(Token::Ident(Atom::from("a_bc")))]);
+        assert_lex_eq!("abc123", [Ok(Token::Ident(Atom::from("abc123")))]);
         assert_lex_eq!(
             "123abc",
             [
-                Ok(Token::Integer(123)),
-                Ok(Token::Ident(SmolStr::from("abc")))
+                Ok(Token::Integer(123.into())),
+                Ok(Token::Ident(Atom::from("abc")))
             ]
         );
-        assert_lex_eq!("中文", [Ok(Token::Ident(SmolStr::from("中文")))]);
+        assert_lex_eq!("中文", [Ok(Token::Ident(Atom::from("中文")))]);
     }
 
     #[test]
     fn lex_float() {
-        assert_lex_eq!("123.45", [Ok(Token::Float(123.45))]);
-        assert_lex_eq!("-67.89", [Ok(Token::Float(-67.89))]);
-        assert_lex_eq!("123.45e6", [Ok(Token::Float(123.45e6))]);
-        assert_lex_eq!("-67.89e-3", [Ok(Token::Float(-67.89e-3))]);
-        assert_lex_eq!("123.45e+6", [Ok(Token::Float(123.45e+6))]);
-        assert_lex_eq!("-67.89e-3", [Ok(Token::Float(-67.89e-3))]);
+        assert_lex_eq!("123.45", [Ok(Token::Float(dec!(123.45)))]);
+        assert_lex_eq!("-67.89", [Ok(Token::Float(dec!(-67.89)))]);
+        assert_lex_eq!("123.45e+6", [Ok(Token::Float(dec!(123.45e+6)))]);
+        assert_lex_eq!("-67.89e-3", [Ok(Token::Float(dec!(-67.89e-3)))]);
+        assert_lex_eq!("123.45e+6", [Ok(Token::Float(dec!(123.45e+6)))]);
     }
 
     #[test]
     fn lex_integer() {
         assert_lex_eq!("1_230", [Ok(Token::Integer(1230))]);
         assert_lex_eq!("-456", [Ok(Token::Integer(-456))]);
-        assert_lex_eq!("0b1010", [Ok(Token::Integer(10))]);
-        assert_lex_eq!("0o777", [Ok(Token::Integer(511))]);
+        assert_lex_eq!("0b1010", [Ok(Token::Integer(0b1010))]);
+        assert_lex_eq!("0o777", [Ok(Token::Integer(0o777))]);
         assert_lex_eq!("0x12345678", [Ok(Token::Integer(0x12345678))]);
     }
 
     #[test]
     fn lex_escape_str() {
-        assert_lex_eq!(
-            r#" """ "#,
-            |lex| [
-                Ok(Token::String(Atom::new(""))),
-                Err(LexError::InvalidToken)
-            ]
-        );
-        assert_lex_eq!(
-            r#" "\"" "\n" "\q" "#,
-            |lex| [
-                Ok(Token::String(Atom::new("\""))),
-                Ok(Token::String(Atom::new("\n"))),
-                Err(LexError::InvalidEscapeChar('q'))
-            ]
-        );
+        assert_lex_eq!(r#" """ "#, |lex| [
+            Ok(Token::String(Atom::new(""))),
+            Err(LexError::InvalidToken)
+        ]);
+        assert_lex_eq!(r#" "\"" "\n" "\q" "#, |lex| [
+            Ok(Token::String(Atom::new("\""))),
+            Ok(Token::String(Atom::new("\n"))),
+            Err(LexError::InvalidEscapeChar('q'))
+        ]);
     }
 
     #[test]
     fn lex_unicode_str() {
-        assert_lex_eq!(
-            r#" "\u{10FFFF}" "\u{10FFFX}" "\u{10FFFFF}""#,
-            |lex| [
-                Ok(Token::String(Atom::new("\u{10FFFF}"))),
-                Err(LexError::InvalidUnicodeChar('X')),
-                Err(LexError::OverlongUnicodeEscape)
-            ]
-        );
+        assert_lex_eq!(r#" "\u{10FFFF}" "\u{10FFFX}" "\u{10FFFFF}""#, |lex| [
+            Ok(Token::String(Atom::new("\u{10FFFF}"))),
+            Err(LexError::InvalidUnicodeChar('X')),
+            Err(LexError::OverlongUnicodeEscape)
+        ]);
     }
 
     #[test]
     fn lex_str() {
-        assert_lex_eq!(
-            r#" "foo" "0" "中文" "#,
-            |lex| [
-                Ok(Token::String(Atom::new("foo"))),
-                Ok(Token::String(Atom::new("0"))),
-                Ok(Token::String(Atom::new("中文")))
-            ]
-        );
+        assert_lex_eq!(r#" "foo" "0" "中文" "#, |lex| [
+            Ok(Token::String(Atom::new("foo"))),
+            Ok(Token::String(Atom::new("0"))),
+            Ok(Token::String(Atom::new("中文")))
+        ]);
     }
 }
