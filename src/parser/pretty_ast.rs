@@ -41,7 +41,7 @@ impl ToPrettyDoc for Declaration {
 impl ToPrettyDoc for FuncDecl {
     fn to_doc(&self) -> RcDoc<()> {
         RcDoc::text("fn ")
-            .append(RcDoc::as_string(&self.name))
+            .append(RcDoc::as_string(&self.name.atom))
             .append("(")
             .append(RcDoc::intersperse(self.params.iter().map(RcDoc::as_string), ", ").group())
             .append(")")
@@ -73,6 +73,10 @@ impl ToPrettyDoc for Expr {
             Expr::BlockExpr(expr_block) => expr_block.to_doc(),
             Expr::IfExpr(if_expr) => if_expr.to_doc(),
             Expr::LetExpr(let_expr) => todo!(),
+            Expr::Loop(loop_expr) => todo!(),
+            Expr::FnCall(fn_call_expr) => todo!(),
+            Expr::Array(array) => todo!(),
+            Expr::ArrayIndexExpr(array_index_expr) => todo!(),
         }
     }
 }

@@ -1,6 +1,32 @@
+use std::ops::Deref;
+
+use chumsky::span::SimpleSpan;
 use rust_decimal::Decimal;
 
-use super::Atom;
+use super::{Atom, Span};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpannedAtom {
+    pub atom: Atom,
+    pub span: Span,
+}
+
+impl SpannedAtom {
+    pub fn new(atom: Atom, span: SimpleSpan) -> Self {
+        SpannedAtom {
+            atom,
+            span: span.into_range(),
+        }
+    }
+}
+
+impl Deref for SpannedAtom {
+    type Target = Atom;
+
+    fn deref(&self) -> &Self::Target {
+        &self.atom
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
@@ -14,8 +40,8 @@ pub enum Declaration {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FuncDecl {
-    pub name: Atom,
-    pub params: Vec<Atom>,
+    pub name: SpannedAtom,
+    pub params: Vec<SpannedAtom>,
     pub body: Expr,
 }
 
@@ -25,20 +51,62 @@ pub struct ExprBlock {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
+pub struct Expr {
+    pub span: Span,
+    pub kind: ExprKind,
+}
+
+impl Expr {
+    pub fn into_kind(self) -> ExprKind {
+        self.kind
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExprKind {
     Literal(Literal),
-    Ident(Atom),
+    Ident(SpannedAtom),
+    Array(Array),
+    ArrayIndexExpr(ArrayIndexExpr),
     UnaryExpr(UnaryExpr),
     BinaryExpr(BinaryExpr),
     BlockExpr(ExprBlock),
     IfExpr(IfExpr),
     LetExpr(LetExpr),
     Return(Box<Expr>),
+    Loop(LoopExpr),
+    FnCall(FnCallExpr),
+}
+
+impl ExprKind {
+    pub fn into_expr(self, span: SimpleSpan) -> Expr {
+        Expr {
+            span: span.into_range(),
+            kind: self,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrayIndexExpr {
+    pub array: Box<Expr>,
+    pub index: Box<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoopExpr {
+    pub body: ExprBlock,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FnCallExpr {
+    pub name: SpannedAtom,
+    pub args: Vec<Expr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetExpr {
-    pub name: Atom,
+    pub name: SpannedAtom,
     pub value: Box<Expr>,
 }
 
@@ -63,10 +131,15 @@ pub struct UnaryExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Array {
+    pub elements: Vec<Expr>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Float(Decimal),
     Integer(i64),
-    String(Atom),
+    String(SpannedAtom),
     Boolean(bool),
     Nil,
 }

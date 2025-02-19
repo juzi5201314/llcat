@@ -2,7 +2,7 @@ use hashbrown::{HashMap, HashSet};
 
 use crate::parser::{ast::*, parser, walk_bin_op, walk_expr, walk_program, ParserHelper};
 use crate::parser::{Atom, Visitor};
-use crate::vm::bytecode;
+use crate::vm_old::bytecode;
 
 use super::Instruction;
 

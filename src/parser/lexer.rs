@@ -86,8 +86,8 @@ pub enum Token {
     This,
     #[token("let")]
     Let,
-    #[token("while")]
-    While,
+    #[token("loop")]
+    Loop,
 
     // punctuation symbol
     #[token("+")]
@@ -362,6 +362,9 @@ pub enum LexError {
 
     #[error("parse int error: {0}")]
     ParseIntegerError(#[from] std::num::ParseIntError),
+
+    #[error("parse float error: {0}")]
+    ParseFloatError(#[from] std::num::ParseFloatError),
 
     #[error("parse decimal error: {0}")]
     ParseDecimalError(#[from] rust_decimal::Error),

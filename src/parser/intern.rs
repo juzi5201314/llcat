@@ -11,7 +11,7 @@ use std::{
     ops::Deref,
 };
 
-use hashbrown::HashSet;
+use hashbrown::{Equivalent, HashSet};
 use once_cell::unsync::Lazy;
 
 use crate::arena::BumpArena;
@@ -244,6 +244,12 @@ impl From<&str> for Atom {
 impl From<String> for Atom {
     fn from(value: String) -> Self {
         Atom::new(value)
+    }
+}
+
+impl Equivalent<String> for Atom {
+    fn equivalent(&self, key: &String) -> bool {
+        self.as_ref() == key
     }
 }
 
